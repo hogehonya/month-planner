@@ -1,65 +1,43 @@
-# 2週間共有プランナー — Netlify版
+# 月ごとの共有プランナー
 
-今後14日分を「1コマ目 / 2コマ目 / 備考」で共有する小規模プランナーです。
+1か月の日付ごとに、1コマ目・2コマ目・備考を共有する小規模Webアプリです。通常URLは閲覧専用、`?edit=1` は編集者名とPINで編集できます。
 
-- 通常URLは閲覧専用
-- `?edit=1` で編集モード
-- 編集PINはNetlify Environment Variableで保持
-- 編集者名・最近30件の履歴
-- 約3秒ごとの自動同期
-- Netlify Blobsへの保存
-- ETag条件付き書き込みによる競合対策
-- スマホ対応 / 印刷・PDF対応
+公開URL: https://honya-month-planner.netlify.app/
 
-## Deploy
+公開済みの月間表示・PIN編集・JSON時間割設定を収録しています。スマートフォンでは日別カード、PCでは表で予定を表示します。編集用PINはNetlifyの環境変数 `EDIT_PIN` で管理し、リポジトリへ保存しません。
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/hogehonya/month-planner#EDIT_PIN=)
+Netlify FunctionsとNetlify Blobsを使用します。初期表示は今月で、前月・翌月へ移動できます。詳しい仕様は[DESIGN.md](DESIGN.md)、ページとファイルの対応は[SITEMAP.md](SITEMAP.md)を参照してください。
 
-デプロイ時に `EDIT_PIN` を設定してください。PIN値はGitHubリポジトリには保存しません。
+## 使い方
 
-`netlify.toml` により以下を使用します。
+通常URLで閲覧し、`?edit=1` で編集者名とPINを入力します。編集は500ms後にセル単位で保存され、他の端末には3秒ごとの読み込みで反映されます。通信失敗時は入力を保持し、再試行できます。
 
-- Build command: なし
-- Publish directory: `public`
-- Functions directory: `netlify/functions`
+編集画面の時間割設定でJSONを貼り付けるかファイルを読み込み、内容を確認して適用します。[雛形](public/base.example.json)には、2コマの名前・時間、曜日ごとの予定、特定日の例外を指定しています。個別編集は時間割より優先され、空欄にしたセルも保持されます。時間割の変更で個別編集を消すことはありません。
 
-## 公開後
+[農林の取込JSON](public/nourin-base.json)は、[農林カレンダー](https://nourin.honya.dev/)の2026年10月・野菜／有機コースA班のみです。2026-10-05に配信中の `assets/index-KbOb2MuM.js` から科目と休日を取得しました。午前の実習が全日扱いで午後が省略されている日は、元サイトと同様に午後にも実習を反映しています。自動追従ではなく、この時点の取り込みです。
 
-閲覧用:
+## 検証
 
-```text
-https://<site>.netlify.app/
+Node.js 22.12以上で実行します。
+
+```sh
+npm ci
+npm test
+npm run check
 ```
 
-編集用:
+テストはPIN検証、入力制限、日付・月境界、JSON設定、別セルの同時更新、履歴記録失敗と回復を対象にします。SDKのローカルBlobsServerはGET応答のETagを欠くため、API全体のSDK結合テストはこの条件を検出した場合にスキップします。条件付き書き込みのSDK契約とAPIの競合制御は別のテストで確認します。Netlify本番の接続確認は別途必要です。
 
-```text
-https://<site>.netlify.app/?edit=1
-```
+スマートフォン実機でのカード表示・IME入力は未検証です。
 
-## 構成
+実環境の同時更新後の読み取り整合性は[後続Issueの本文](docs/concurrency-issue.md)へ切り出しています。更新消失は未確定であり、今回のデプロイ準備の完了条件からは外しています。
 
-```text
-public/index.html
-netlify/functions/planner.mjs
-netlify.toml
-package.json
-DESIGN.md
-```
+## Netlifyへの公開
 
-データ保存はNetlify Blobsを使用するため、Supabase等の外部DBは不要です。
+GitHubリポジトリは `hogehonya/month-planner` です。NetlifyでこのリポジトリをImportします。`netlify.toml` に公開先 `public` とFunctionsディレクトリ `netlify/functions` を定義しているため、ビルドコマンドは不要です。
 
-## セキュリティ
+Netlifyの環境変数に `EDIT_PIN` を設定し、Functionsから利用できるようにしてデプロイします。値はソース・URL・公開ファイルへ記載しません。`.env.example` にも実値は入れていません。PINが未設定の場合、閲覧APIは動作しますが編集は拒否されます。
 
-PINはHTMLやJavaScriptには埋めず、Netlify Function内で `process.env.EDIT_PIN` と比較します。
+公開後は通常URLで閲覧、`?edit=1` で認証・保存、別端末で同期、JSON設定の反映と履歴を確認してください。データはサイト単位のBlobsストアに保存します。同じサイトへの再デプロイで維持されます。
 
-短いPINは身内向けの簡易ロックです。公開範囲が広い用途ではログイン認証への変更を推奨します。
-
-## ローカル確認
-
-```bash
-npm install
-netlify dev
-```
-
-詳細設計は [DESIGN.md](./DESIGN.md) を参照してください。
+このアプリは少人数向けの簡易PIN認証です。URLを知る人は予定と編集者名・履歴を閲覧できます。自動バックアップやアカウント管理はありません。
