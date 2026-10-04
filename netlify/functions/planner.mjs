@@ -55,7 +55,6 @@ async function writeFieldAtomic(store, { entryDate, field, value, editorName }) 
       : await store.setJSON(key, next, { onlyIfNew: true });
 
     if (result.modified) return next;
-
     await sleep(20 + Math.floor(Math.random() * 35));
   }
 
@@ -100,7 +99,7 @@ async function listHistory(store, limit = 30) {
 }
 
 export default async (req) => {
-  const store = getStore({ name: STORE_NAME, consistency: "strong" });
+  const store = getStore(STORE_NAME);
 
   if (req.method === "GET") {
     const url = new URL(req.url);
@@ -140,7 +139,6 @@ export default async (req) => {
   }
 
   if (body?.action === "verify") return json({ ok: true });
-
   if (body?.action !== "save") return json({ error: "Unknown action" }, 400);
 
   const entryDate = String(body.entry_date ?? "");
@@ -160,20 +158,13 @@ export default async (req) => {
   }
 
   try {
-    const row = await writeFieldAtomic(store, {
-      entryDate,
-      field,
-      value,
-      editorName,
-    });
-
+    const row = await writeFieldAtomic(store, { entryDate, field, value, editorName });
     await addHistory(store, {
       entry_date: entryDate,
       editor_name: editorName,
       field_name: field,
       changed_at: row.updated_at,
     });
-
     return json({ ok: true, row });
   } catch (error) {
     console.error(error);
