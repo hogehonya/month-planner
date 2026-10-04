@@ -22,6 +22,8 @@ npm run check
 
 テストはPIN検証、入力制限、日付・月境界、JSON設定、別セルの同時更新、履歴記録失敗と回復を対象にします。SDKのローカルBlobsServerはGET応答のETagを欠くため、API全体のSDK結合テストはこの条件を検出した場合にスキップします。条件付き書き込みのSDK契約とAPIの競合制御は別のテストで確認します。Netlify本番の接続確認は別途必要です。
 
+実環境の同時更新後の読み取り整合性は[後続Issueの本文](docs/concurrency-issue.md)へ切り出しています。更新消失は未確定であり、今回のデプロイ準備の完了条件からは外しています。
+
 ## Netlifyへの公開
 
 GitHubリポジトリは `hogehonya/month-planner` です。NetlifyでこのリポジトリをImportします。`netlify.toml` に公開先 `public` とFunctionsディレクトリ `netlify/functions` を定義しているため、ビルドコマンドは不要です。
