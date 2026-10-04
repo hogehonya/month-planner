@@ -12,3 +12,5 @@
 `public/index.html`、`style.css`、`app.mjs` が画面、`public/model.mjs` が共通検証、`netlify/functions/planner.mjs` がAPIです。設計判断とデータ形式の正本は `DESIGN.md`、公開手順は `README.md` です。
 
 後回しにする同時更新の検証は `docs/concurrency-issue.md` に記録しています。
+
+`public/nourin-base.json` は農林カレンダーの2026年10月・野菜／有機コースA班の取込データです。
