@@ -1,126 +1,65 @@
 # 2週間共有プランナー — Netlify版
 
-このフォルダをGitHubリポジトリに入れてNetlifyへImportすれば、
-**Supabaseなし・Netlifyだけ**で動きます。
+今後14日分を「1コマ目 / 2コマ目 / 備考」で共有する小規模プランナーです。
 
-## 機能
-
-- 今日から14日
-- 各日「1コマ目 / 2コマ目 / 備考」
 - 通常URLは閲覧専用
 - `?edit=1` で編集モード
-- 編集PIN
-- 編集者名と最近30件の編集履歴
-- 約3秒ごとに他端末の変更を自動反映
-- 同時編集対策（ETag条件付き書き込み + 再試行）
-- スマホ対応
-- 印刷 / PDF
+- 編集PINはNetlify Environment Variableで保持
+- 編集者名・最近30件の履歴
+- 約3秒ごとの自動同期
+- Netlify Blobsへの保存
+- ETag条件付き書き込みによる競合対策
+- スマホ対応 / 印刷・PDF対応
 
-## 保存先
+## Deploy
 
-Netlify Blobsを使います。
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/hogehonya/month-planner#EDIT_PIN=)
 
-DBやSupabaseの契約は不要です。
+デプロイ時に `EDIT_PIN` を設定してください。PIN値はGitHubリポジトリには保存しません。
 
----
-
-# デプロイ直前までの準備
-
-このリポジトリをGitHubへpushしたら、Netlifyで:
-
-1. `Add new project`
-2. `Import an existing project`
-3. GitHubを選ぶ
-4. このリポジトリを選ぶ
-
-`netlify.toml` があるので通常は設定を自動認識します。
+`netlify.toml` により以下を使用します。
 
 - Build command: なし
 - Publish directory: `public`
 - Functions directory: `netlify/functions`
 
-## 必須: PINをEnvironment variableへ設定
+## 公開後
 
-**Deployする前に** NetlifyのEnvironment variablesへ追加:
+閲覧用:
 
-- Key: `EDIT_PIN`
-- Value: `0831`
+```text
+https://<site>.netlify.app/
+```
 
-PINはソースコードには入れていません。
+編集用:
 
-Netlify UIのEnvironment variablesはFunctionsの実行時に利用できます。
-`netlify.toml` に秘密値を書かないでください。
+```text
+https://<site>.netlify.app/?edit=1
+```
 
----
+## 構成
 
-# 公開後
+```text
+public/index.html
+netlify/functions/planner.mjs
+netlify.toml
+package.json
+DESIGN.md
+```
 
-通常URL:
+データ保存はNetlify Blobsを使用するため、Supabase等の外部DBは不要です。
 
-`https://xxxx.netlify.app/`
+## セキュリティ
 
-→ 閲覧専用
+PINはHTMLやJavaScriptには埋めず、Netlify Function内で `process.env.EDIT_PIN` と比較します。
 
-編集URL:
+短いPINは身内向けの簡易ロックです。公開範囲が広い用途ではログイン認証への変更を推奨します。
 
-`https://xxxx.netlify.app/?edit=1`
-
-→ 編集者名 + PIN `0831` で編集
-
-画面上の「閲覧URLをコピー」「編集URLをコピー」から共有できます。
-
----
-
-# 同期について
-
-Supabase Realtimeのようなpush配信ではなく、約3秒ごとに自動取得します。
-
-この予定表用途では操作感はほぼリアルタイムです。
-入力中のセルは自動同期で上書きしません。
-
----
-
-# 同時編集
-
-各日をNetlify Blobに保存します。
-
-保存時は:
-
-1. 最新データ + ETagを取得
-2. 編集したセルだけ反映
-3. `onlyIfMatch` で条件付き保存
-4. 同時更新されていたら最新値を再取得して再試行
-
-という流れです。
-
-別の人が同じ日の別セルを触っても、古い1日分データで
-他人の変更を消しにくい構成です。
-
-同じセルを同時に編集した場合は、最後に正常保存された値が残ります。
-
----
-
-# PINについて
-
-`0831` は身内利用向けの簡易ロックです。
-
-PINはHTMLやJavaScriptには埋めず、Netlify Function内で
-Environment variableと比較します。
-
-ただし4桁PINなので強い認証ではありません。
-公開範囲が広がる場合はログイン認証への変更を推奨します。
-
----
-
-# ローカル確認（任意）
-
-Netlify CLIがある場合:
+## ローカル確認
 
 ```bash
 npm install
 netlify dev
 ```
 
-ローカル用の環境変数を適切に設定して確認してください。
-
-通常の公開はGitHub → Netlify Importだけで構いません。
+詳細設計は [DESIGN.md](./DESIGN.md) を参照してください。
