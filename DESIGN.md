@@ -52,23 +52,21 @@ https://<site>.netlify.app/
 https://<site>.netlify.app/?edit=1
 ```
 
-PINはURLに含めない。
+PINはURLやリポジトリには含めない。
 
 ## 4. 編集認証
 
 編集時のみPINを要求する。
 
-初期PINは `0831`。
-
-PINはソースコードには保存せず、Netlify Environment Variableとして設定する。
+PINはNetlify Environment Variableとして保持する。
 
 ```text
-EDIT_PIN=0831
+EDIT_PIN=<secret>
 ```
 
 Function側で `process.env.EDIT_PIN` を読み、`crypto.timingSafeEqual()` で比較する。
 
-4桁PINは身内利用向けの簡易ロックであり、強い認証用途ではない。
+短いPINを使う場合は身内利用向けの簡易ロックと位置づける。
 
 ## 5. データ構造
 
@@ -86,7 +84,7 @@ entries/2026-10-05.json
   "slot1": "午前作業",
   "slot2": "午後作業",
   "note": "雨天時変更",
-  "last_editor": "新添",
+  "last_editor": "編集者名",
   "updated_at": "2026-10-05T03:20:00.000Z"
 }
 ```
@@ -97,7 +95,7 @@ entries/2026-10-05.json
 {
   "id": "timestamp-uuid",
   "entry_date": "2026-10-05",
-  "editor_name": "新添",
+  "editor_name": "編集者名",
   "field_name": "slot1",
   "changed_at": "2026-10-05T03:20:00.000Z"
 }
@@ -133,7 +131,7 @@ GET /.netlify/functions/planner?start=2026-10-05&end=2026-10-18
 ```json
 {
   "action": "verify",
-  "pin": "0831"
+  "pin": "<entered pin>"
 }
 ```
 
@@ -142,8 +140,8 @@ GET /.netlify/functions/planner?start=2026-10-05&end=2026-10-18
 ```json
 {
   "action": "save",
-  "pin": "0831",
-  "editor_name": "新添",
+  "pin": "<entered pin>",
+  "editor_name": "編集者名",
   "entry_date": "2026-10-05",
   "field": "slot1",
   "value": "午前作業"
@@ -210,12 +208,6 @@ Netlify BlobsのETag条件付き書き込みを使う。
 
 入力ごとに即送信せず500msのデバウンスを入れる。
 
-目的:
-
-- Function呼び出し削減
-- Blob書き込み削減
-- タイピング途中の過剰保存防止
-
 ## 11. 入力制限
 
 - 編集者名: 40文字
@@ -243,7 +235,7 @@ Build commandは不要。
 必須Environment Variable:
 
 ```text
-EDIT_PIN=0831
+EDIT_PIN=<secret>
 ```
 
 ## 13. 非対象
@@ -264,7 +256,7 @@ EDIT_PIN=0831
 - Netlifyで公開できる
 - 通常URLで閲覧できる
 - `?edit=1` で編集モードに入れる
-- PIN `0831` で編集できる
+- Netlifyに設定したPINで編集できる
 - データがNetlify Blobsに保存される
 - 他端末へ数秒以内に反映される
 - 編集者名と履歴が確認できる
