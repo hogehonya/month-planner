@@ -2,6 +2,10 @@
 
 1か月の日付ごとに、1コマ目・2コマ目・備考を共有する小規模Webアプリです。通常URLは閲覧専用、`?edit=1` は編集者名とPINで編集できます。
 
+公開URL: https://honya-month-planner.netlify.app/
+
+現在は閲覧公開済みです。編集を有効にするにはNetlifyの環境変数 `EDIT_PIN` の設定と再デプロイが必要です。GitHubへのpush・自動デプロイ連携は `hogehonya` の認証待ちです。
+
 Netlify FunctionsとNetlify Blobsを使用します。初期表示は今月で、前月・翌月へ移動できます。詳しい仕様は[DESIGN.md](DESIGN.md)、ページとファイルの対応は[SITEMAP.md](SITEMAP.md)を参照してください。
 
 ## 使い方
