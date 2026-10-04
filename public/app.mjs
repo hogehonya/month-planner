@@ -42,7 +42,7 @@ function buildMonth() {
     const meta = document.createElement('div'); meta.className = 'meta'; heading.append(meta); row.append(heading);
     for (const field of FIELDS) {
       const td = document.createElement('td'), display = document.createElement('div'), input = document.createElement('textarea'), message = document.createElement('div');
-      display.className = 'cell-value'; message.className = 'cell-status'; input.rows = 3; input.setAttribute('aria-label', `${date} ${fieldLabel(field)}`); input.maxLength = LIMITS[field] * 2;
+      td.dataset.label = fieldLabel(field); display.className = 'cell-value'; message.className = 'cell-status'; input.rows = 3; input.setAttribute('aria-label', `${date} ${fieldLabel(field)}`); input.maxLength = LIMITS[field] * 2;
       const cell = { date, field, input, display, message, meta, version: 0, dirty: false, inflight: false, composing: false, error: '', timer: null };
       input.addEventListener('input', () => { cell.version++; cell.dirty = true; cell.error = ''; clearTimeout(cell.timer); cellStatus(cell, '未保存'); if (!cell.composing) schedule(cell); });
       input.addEventListener('compositionstart', () => { cell.composing = true; clearTimeout(cell.timer); });
@@ -76,6 +76,8 @@ function paint(data) {
     for (const field of FIELDS) {
       const cell = cells.get(`${row.entry_date}:${field}`); if (!cell) continue;
       cell.input.setAttribute('aria-label', `${row.entry_date} ${fieldLabel(field)}`);
+      const slot = field === 'note' ? null : base.slots[field === 'slot1' ? 0 : 1];
+      cell.input.parentElement.dataset.label = fieldLabel(field) + (slot?.time ? `（${slot.time}）` : '');
       if (!cell.dirty && !cell.inflight && !cell.composing && document.activeElement !== cell.input) { cell.input.value = row[field]; cell.display.textContent = row[field]; }
       cell.meta.textContent = row.last_editor ? `${row.last_editor} · ${formatTime(row.updated_at)}` : '';
     }

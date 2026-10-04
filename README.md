@@ -6,7 +6,7 @@
 
 現在は閲覧公開済みです。編集を有効にするにはNetlifyの環境変数 `EDIT_PIN` の設定と再デプロイが必要です。GitHubへのpush・自動デプロイ連携は `hogehonya` の認証待ちです。
 
-Netlify FunctionsとNetlify Blobsを使用します。初期表示は今月で、前月・翌月へ移動できます。詳しい仕様は[DESIGN.md](DESIGN.md)、ページとファイルの対応は[SITEMAP.md](SITEMAP.md)を参照してください。
+Netlify FunctionsとNetlify Blobsを使用します。初期表示は今月で、前月・翌月へ移動できます。スマートフォンでは1日ずつ縦に並べ、横にはみ出さない表示に切り替えます。詳しい仕様は[DESIGN.md](DESIGN.md)、ページとファイルの対応は[SITEMAP.md](SITEMAP.md)を参照してください。
 
 ## 使い方
 
