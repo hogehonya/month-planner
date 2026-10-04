@@ -1,21 +1,22 @@
-import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, localDate, validateBase, textLimit } from './model.mjs';
+import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, localDate, validateSlot, textLimit } from './model.mjs';
 const $ = id => document.getElementById(id);
 const API = '/.netlify/functions/planner';
 const editingRequested = new URLSearchParams(location.search).get('edit') === '1';
-let month = localDate().slice(0, 7), pin = '', editor = '', authenticated = false, base = DEFAULT_BASE, baseEtag = null;
-let pendingSync = null, writeEpoch = 0, baseNeedsReload = false;
-let loadSequence = 0, polling = false, lastSync = '', baseStarted = false, baseExpected = null, baseDirty = false, baseBusy = false, preview = null;
+let month = localDate().slice(0, 7), pin = '', editor = '', authenticated = false, base = DEFAULT_BASE;
+let pendingSync = null, writeEpoch = 0, activeSlot = null, dialogBusy = false, dialogDirty = false, dialogComposing = false, dialogReturnFocus = null;
+let loadSequence = 0, polling = false, lastSync = '';
+const slots = new Map();
 const cells = new Map();
 const dates = () => monthRange(month);
 const formatTime = value => value ? new Date(value).toLocaleString('ja-JP') : '';
-const fieldLabel = field => field === 'base' ? '時間割' : field === 'note' ? '備考' : base.slots[field === 'slot1' ? 0 : 1].label;
+const fieldLabel = field => field === 'base' ? '時間割' : field === 'note' ? '備考' : base.slots[field.startsWith('slot1') ? 0 : 1].label;
 async function request(body, query = '') {
   const response = await fetch(API + query, body ? { signal: AbortSignal.timeout(10000), method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, pin }) } : { cache: 'no-store', signal: AbortSignal.timeout(10000) });
   let result; try { result = await response.json(); } catch { throw new Error('サーバーの応答を確認できません。再試行してください。'); }
   if (!response.ok) throw Object.assign(new Error(result.error || '通信に失敗しました。'), { status: response.status });
   return result;
 }
-function unsaved() { return baseDirty || baseBusy || [...cells.values()].some(cell => cell.dirty || cell.inflight || cell.composing); }
+function unsaved() { return dialogDirty || dialogBusy || [...cells.values()].some(cell => cell.dirty || cell.inflight || cell.composing); }
 function status() {
   const list = [...cells.values()], failed = list.filter(cell => cell.error).length, waiting = list.filter(cell => cell.dirty || cell.inflight).length;
   $('status').textContent = failed ? `${failed}件を保存できませんでした。入力は保持しています。` : waiting ? `${waiting}件が未保存・保存中です。` : lastSync ? `同期済み · ${lastSync}` : '読み込み中…';
@@ -26,13 +27,13 @@ function setMode() {
   $('auth').hidden = !editingRequested || authenticated;
   $('edit-link').hidden = editingRequested;
   $('logout').hidden = !authenticated;
-  $('base-panel').hidden = !authenticated;
-  $('mode').textContent = authenticated ? `${editor}として編集中 · 入力後に自動保存` : '閲覧専用 · 3秒ごとに同期';
+  $('mode').textContent = authenticated ? `${editor}として編集中 · コマは保存ボタン、備考は自動保存` : '閲覧専用 · 3秒ごとに同期';
+  for (const slot of slots.values()) slot.button.textContent = authenticated ? '見出し・内容を編集' : '編集する';
   for (const cell of cells.values()) { cell.input.hidden = !editingRequested; cell.input.readOnly = !authenticated; cell.display.hidden = editingRequested; }
 }
-function authExpired() { authenticated = false; pin = ''; $('pin').value = ''; $('auth-message').textContent = '認証が切れました。入力を保持しています。PINを入力し直してください。'; setMode(); }
+function authExpired() { authenticated = false; pin = ''; $('pin').value = ''; $('auth-message').textContent = '認証が切れました。入力を保持しています。PINを入力し直してください。'; setMode(); if (activeSlot) { $('dialog-auth').hidden = false; $('dialog-save').disabled = true; } }
 function buildMonth() {
-  cells.clear(); $('days').replaceChildren();
+  cells.clear(); slots.clear(); $('days').replaceChildren();
   const [year, number] = month.split('-'); $('month-title').textContent = `${year}年${Number(number)}月`;
   for (const date of dates()) {
     const day = new Date(`${date}T12:00:00Z`).getUTCDay();
@@ -41,6 +42,12 @@ function buildMonth() {
     if (date === localDate()) { const badge = document.createElement('span'); badge.className = 'today-badge'; badge.textContent = '今日'; heading.append(badge); }
     const meta = document.createElement('div'); meta.className = 'meta'; heading.append(meta); row.append(heading);
     for (const field of FIELDS) {
+      if (field !== 'note') {
+        const td = document.createElement('td'), timetable = document.createElement('div'), title = document.createElement('div'), content = document.createElement('div'), button = document.createElement('button');
+        td.dataset.label = fieldLabel(field); timetable.className = 'timetable'; title.className = 'slot-title'; content.className = 'slot-content'; button.type = 'button'; button.textContent = '編集する';
+        const slot = { date, field, td, timetable, title, content, button, meta, titleValue: '', contentValue: '' };
+        button.onclick = () => openSlot(slot); slots.set(`${date}:${field}`, slot); td.append(timetable, title, content, button); row.append(td); continue;
+      }
       const td = document.createElement('td'), display = document.createElement('div'), input = document.createElement('textarea'), message = document.createElement('div');
       td.dataset.label = fieldLabel(field); display.className = 'cell-value'; message.className = 'cell-status'; input.rows = 3; input.setAttribute('aria-label', `${date} ${fieldLabel(field)}`); input.maxLength = LIMITS[field] * 2;
       const cell = { date, field, input, display, message, meta, version: 0, dirty: false, inflight: false, composing: false, error: '', timer: null };
@@ -70,14 +77,14 @@ async function save(cell) {
   finally { writeEpoch++; cell.inflight = false; status(); if (succeeded && cell.dirty && !cell.composing) schedule(cell); }
 }
 function paint(data) {
-  base = data.base; baseEtag = data.base_etag;
+  base = data.base;
   for (let i = 0; i < 2; i++) { const heading = $(`slot${i + 1}-heading`); heading.replaceChildren(document.createTextNode(base.slots[i].label)); const time = document.createElement('span'); time.className = 'slot-time'; time.textContent = base.slots[i].time; heading.append(time); }
   for (const row of data.entries) {
     for (const field of FIELDS) {
+      if (field !== 'note') { updateSlot(slots.get(`${row.entry_date}:${field}`), row); continue; }
       const cell = cells.get(`${row.entry_date}:${field}`); if (!cell) continue;
       cell.input.setAttribute('aria-label', `${row.entry_date} ${fieldLabel(field)}`);
-      const slot = field === 'note' ? null : base.slots[field === 'slot1' ? 0 : 1];
-      cell.input.parentElement.dataset.label = fieldLabel(field) + (slot?.time ? `（${slot.time}）` : '');
+      cell.input.parentElement.dataset.label = fieldLabel(field);
       if (!cell.dirty && !cell.inflight && !cell.composing && document.activeElement !== cell.input) { cell.input.value = row[field]; cell.display.textContent = row[field]; }
       cell.meta.textContent = row.last_editor ? `${row.last_editor} · ${formatTime(row.updated_at)}` : '';
     }
@@ -87,8 +94,8 @@ function paint(data) {
   if (!data.history.length) { const li = document.createElement('li'); li.textContent = 'まだ変更履歴はありません。'; $('history').append(li); }
   lastSync = new Date().toLocaleTimeString('ja-JP'); status();
 }
-async function sync(force = false) {
-  if (pendingSync) { if (!force) return false; await pendingSync; }
+async function sync() {
+  if (pendingSync) return false;
   pendingSync = runSync();
   try { return await pendingSync; } finally { pendingSync = null; }
 }
@@ -113,31 +120,63 @@ $('auth-form').onsubmit = async event => {
 };
 $('logout').onclick = () => { if (unsaved()) { $('status').textContent = '未保存の入力があります。保存・再試行してから編集を終了してください。'; return; } authenticated = false; pin = ''; setMode(); };
 $('retry').onclick = () => { if (!authenticated) { $('auth-message').textContent = 'PINを入力し直してから再試行してください。'; $('auth').hidden = false; return; } for (const cell of cells.values()) if (cell.dirty && !cell.inflight) { cell.error = ''; save(cell); } };
-function beginBase() { if (baseNeedsReload) return; if (!baseStarted) { baseStarted = true; baseExpected = baseEtag; } }
-function invalidateBase() { beginBase(); baseDirty = true; preview = null; $('base-apply').disabled = true; $('base-result').hidden = true; }
-$('base-json').addEventListener('input', invalidateBase);
-$('base-panel').addEventListener('toggle', () => { if ($('base-panel').open) beginBase(); });
-$('base-load').onclick = async () => {
-  if (baseBusy || (baseDirty && !confirm('入力したJSONを現在の共有時間割に置き換えますか？'))) return;
-  if (!await sync(true)) { $('base-message').textContent = '現在の時間割を取得できませんでした。'; return; }
-  baseNeedsReload = false; baseStarted = true; baseExpected = baseEtag; baseDirty = false; preview = null; $('base-json').value = JSON.stringify(base, null, 2); $('base-apply').disabled = true; $('base-result').hidden = true; $('base-message').textContent = '現在の時間割を読み込みました。';
-};
-$('base-file').onchange = async event => { const file = event.target.files[0]; if (!file) return; if (file.size > 262144) { $('base-message').textContent = 'JSONは256KiB以内にしてください。'; return; } try { const value = await file.text(); if (baseBusy) return; $('base-json').value = value; invalidateBase(); $('base-message').textContent = 'ファイルを読み込みました。「内容を確認」を押してください。'; } catch { $('base-message').textContent = 'ファイルを読み込めませんでした。'; } };
-$('base-preview').onclick = () => {
-  if (baseNeedsReload) { $('base-message').textContent = '先に「現在の時間割を読み込む」を押してください。'; return; }
-  try { beginBase(); preview = validateBase(JSON.parse($('base-json').value)); $('base-result').textContent = JSON.stringify(preview, null, 2); $('base-result').hidden = false; $('base-apply').disabled = baseBusy; $('base-message').textContent = `${preview.slots.map(slot => slot.label + (slot.time ? `（${slot.time}）` : '')).join(' / ')} · 曜日設定${Object.keys(preview.weekdays).length}件 · 日付例外${Object.keys(preview.dates).length}件`; }
-  catch (error) { preview = null; $('base-apply').disabled = true; $('base-result').hidden = true; $('base-message').textContent = `JSONを確認してください：${error.message}`; }
-};
-$('base-apply').onclick = async () => {
-  if (!preview || baseBusy || !authenticated || baseNeedsReload) return;
-  writeEpoch++; baseBusy = true; $('base-apply').disabled = true; $('base-json').disabled = true; $('base-file').disabled = true; $('base-preview').disabled = true;
+function updateSlot(slot, row) {
+  if (!slot) return;
+  const info = base.slots[slot.field === 'slot1' ? 0 : 1];
+  slot.td.dataset.label = info.label + (info.time ? `（${info.time}）` : '');
+  slot.timetable.textContent = row[slot.field] || '時間割なし';
+  slot.titleValue = row[slot.field + '_title']; slot.contentValue = row[slot.field + '_content'];
+  slot.title.textContent = slot.titleValue; slot.content.textContent = slot.contentValue;
+  slot.button.setAttribute('aria-label', `${slot.date} ${info.label}の見出し・内容を編集`);
+  slot.meta.textContent = row.last_editor ? `${row.last_editor} · ${formatTime(row.updated_at)}` : '';
+}
+function openSlot(slot) {
+  if (!authenticated) {
+    if (!editingRequested) { location.href = '?edit=1'; return; }
+    $('auth').hidden = false; $('auth-message').textContent = '編集するには編集者名とPINを入力してください。'; $('editor').focus(); return;
+  }
+  if (activeSlot) return;
+  activeSlot = slot; dialogReturnFocus = slot.button; dialogDirty = false; dialogComposing = false;
+  const info = base.slots[slot.field === 'slot1' ? 0 : 1];
+  const period = slot.field === 'slot1' ? '午前' : '午後';
+  $('dialog-heading').textContent = `${slot.date} ${period}${info.label === period ? '' : `（${info.label}）`}を編集`;
+  $('dialog-timetable').textContent = `時間割：${slot.timetable.textContent}${info.time ? `（${info.time}）` : ''}`;
+  $('slot-title').value = slot.titleValue; $('slot-content').value = slot.contentValue;
+  $('dialog-message').textContent = ''; $('dialog-auth-message').textContent = ''; $('dialog-auth').hidden = true; $('dialog-pin').value = ''; $('dialog-save').disabled = false;
+  $('slot-dialog').showModal(); $('slot-title').focus();
+}
+function cancelDialog() { if (!dialogBusy) $('slot-dialog').close(); }
+$('dialog-close').onclick = cancelDialog; $('dialog-cancel').onclick = cancelDialog;
+$('slot-dialog').addEventListener('cancel', event => { event.preventDefault(); cancelDialog(); });
+$('slot-dialog').addEventListener('close', () => { activeSlot = null; dialogDirty = false; dialogComposing = false; $('dialog-pin').value = ''; dialogReturnFocus?.focus(); dialogReturnFocus = null; });
+for (const id of ['slot-title', 'slot-content']) {
+  $(id).addEventListener('input', () => { dialogDirty = true; });
+  $(id).addEventListener('compositionstart', () => { dialogComposing = true; });
+  $(id).addEventListener('compositionend', () => { dialogComposing = false; });
+}
+function setDialogBusy(busy) {
+  dialogBusy = busy;
+  for (const id of ['slot-title', 'slot-content', 'dialog-close', 'dialog-cancel', 'dialog-verify', 'dialog-pin']) $(id).disabled = busy;
+  $('dialog-save').disabled = busy || !authenticated;
+}
+$('slot-form').onsubmit = async event => {
+  event.preventDefault(); if (!activeSlot || dialogBusy || dialogComposing || !authenticated) return;
+  const slot = activeSlot, title = $('slot-title').value, content = $('slot-content').value;
+  try { validateSlot(slot.field, title, content); } catch (error) { $('dialog-message').textContent = error.message; return; }
+  writeEpoch++; setDialogBusy(true); $('dialog-message').textContent = '保存中…';
   try {
-    const result = await request({ action: 'base', editor_name: editor, base: preview, expected_etag: baseExpected });
-    writeEpoch++; baseDirty = false; preview = null;
-    if (await sync(true)) { baseExpected = baseEtag; $('base-json').value = JSON.stringify(base, null, 2); $('base-message').textContent = result.history_saved === false ? '時間割を保存しました。履歴は同期待ちです。' : '共有時間割に反映しました。'; }
-    else { baseNeedsReload = true; $('base-message').textContent = '時間割は保存済みです。次の編集前に「現在の時間割を読み込む」を押してください。'; }
-  } catch (error) { baseDirty = true; $('base-message').textContent = `${error.message} JSONは保持しています。`; if (error.status === 401) authExpired(); }
-  finally { writeEpoch++; baseBusy = false; $('base-json').disabled = false; $('base-file').disabled = false; $('base-preview').disabled = false; $('base-apply').disabled = !preview || baseNeedsReload; }
+    const result = await request({ action: 'save_slot', editor_name: editor, entry_date: slot.date, slot: slot.field, title, content });
+    updateSlot(slot, result.row); dialogDirty = false; $('slot-dialog').close();
+    $('status').textContent = result.history_saved === false ? 'コマを保存しました。履歴は同期待ちです。' : 'コマを保存しました。';
+  } catch (error) { $('dialog-message').textContent = `${error.message} 入力は保持しています。`; if (error.status === 401) authExpired(); }
+  finally { writeEpoch++; setDialogBusy(false); }
+};
+$('dialog-verify').onclick = async () => {
+  if (dialogBusy) return;
+  pin = $('dialog-pin').value; setDialogBusy(true); $('dialog-auth-message').textContent = '認証中…';
+  try { await request({ action: 'verify' }); authenticated = true; $('dialog-pin').value = ''; $('dialog-auth').hidden = true; setMode(); $('dialog-message').textContent = '再認証しました。「保存」を押してください。'; }
+  catch (error) { pin = ''; $('dialog-auth-message').textContent = error.message; }
+  finally { setDialogBusy(false); }
 };
 window.addEventListener('beforeunload', event => { if (unsaved()) { event.preventDefault(); event.returnValue = ''; } });
 buildMonth(); sync(); setInterval(() => sync(), 3000);

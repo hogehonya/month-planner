@@ -1,5 +1,11 @@
 export const FIELDS = ['slot1', 'slot2', 'note'];
 export const LIMITS = { slot1: 1200, slot2: 1200, note: 3000 };
+export const SLOTS = ['slot1', 'slot2'];
+export const SLOT_LIMITS = { title: 120, content: 3000 };
+export function validateSlot(slot, title, content) {
+  if (!SLOTS.includes(slot)) throw new Error('編集対象のコマを確認してください。');
+  return { [slot + '_title']: textLimit(title, SLOT_LIMITS.title, '見出し'), [slot + '_content']: textLimit(content, SLOT_LIMITS.content, '内容') };
+}
 export const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 export const DEFAULT_BASE = { slots: [{ label: '1コマ目', time: '' }, { label: '2コマ目', time: '' }], weekdays: {}, dates: {} };
 
@@ -64,5 +70,7 @@ export function effectiveEntry(date, raw, base = DEFAULT_BASE) {
   const weekday = WEEKDAYS[parseDate(date).getUTCDay()];
   const fields = { slot1: '', slot2: '', note: '', ...base.weekdays[weekday], ...base.dates[date] };
   for (const field of FIELDS) if (raw && Object.hasOwn(raw, field)) fields[field] = raw[field];
-  return { entry_date: date, ...fields, last_editor: raw?.last_editor ?? '', updated_at: raw?.updated_at ?? '', overridden_fields: FIELDS.filter(field => raw && Object.hasOwn(raw, field)) };
+  const details = {};
+  for (const slot of SLOTS) for (const field of ['title', 'content']) details[slot + '_' + field] = raw?.[slot + '_' + field] ?? '';
+  return { entry_date: date, ...fields, ...details, last_editor: raw?.last_editor ?? '', updated_at: raw?.updated_at ?? '', overridden_fields: FIELDS.filter(field => raw && Object.hasOwn(raw, field)) };
 }

@@ -22,3 +22,11 @@ header,p,label,summary,.meta,.cell-status,#history li{overflow-wrap:anywhere}
   .file-label input{min-width:0}
   pre{max-width:100%;overflow:auto}
 }
+
+.timetable{white-space:pre-wrap;overflow-wrap:anywhere;padding:8px 10px;background:var(--tint);border-radius:4px;margin-bottom:10px}
+.slot-title{font-weight:600;white-space:pre-wrap;overflow-wrap:anywhere}
+.slot-content{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 12px}
+dialog{width:min(calc(100vw - 24px),640px);max-height:calc(100dvh - 24px);overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:24px;background:var(--surface);color:var(--text)}
+dialog::backdrop{background:#0008}.dialog-header{display:flex;align-items:start;justify-content:space-between;gap:12px;margin-bottom:16px}.dialog-header h2{min-width:0;overflow-wrap:anywhere}.dialog-header button{flex-shrink:0}
+#slot-form label{margin:16px 0}.hint{font-size:14px;font-weight:400;color:var(--muted)}#dialog-auth{padding:12px;border:1px solid var(--line);border-radius:6px}#dialog-message,#dialog-auth-message{overflow-wrap:anywhere}
+@media(max-width:600px){dialog{padding:16px}.dialog-header{flex-wrap:wrap}.dialog-header h2{width:100%}}
