@@ -30,6 +30,18 @@ export function monthRange(month) {
   return dateRange(month + '-01', last.toISOString().slice(0, 10));
 }
 
+export function shiftDate(value, days) {
+  const date = parseDate(value);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+export function fortnightRange(value) {
+  const day = parseDate(value).getUTCDay();
+  const start = shiftDate(value, -((day + 6) % 7));
+  return dateRange(start, shiftDate(start, 13));
+}
+
 export function localDate(date = new Date()) {
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
 }

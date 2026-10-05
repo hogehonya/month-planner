@@ -1,4 +1,4 @@
-import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, localDate, validateSlot, textLimit } from './model.mjs';
+import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, fortnightRange, shiftDate, localDate, validateSlot, textLimit } from './model.mjs';
 const $ = id => document.getElementById(id);
 const API = '/.netlify/functions/planner';
 const editingRequested = new URLSearchParams(location.search).get('edit') === '1';
@@ -7,7 +7,9 @@ let pendingSync = null, writeEpoch = 0, activeSlot = null, dialogBusy = false, d
 let loadSequence = 0, polling = false, lastSync = '';
 const slots = new Map();
 const cells = new Map();
-const dates = () => monthRange(month);
+let view = 'month', anchor = localDate(), selectedDate = localDate();
+const dayButtons = new Map();
+const dates = () => view === 'month' ? monthRange(month) : fortnightRange(anchor);
 const formatTime = value => value ? new Date(value).toLocaleString('ja-JP') : '';
 const fieldLabel = field => field === 'base' ? '時間割' : field === 'note' ? '備考' : base.slots[field.startsWith('slot1') ? 0 : 1].label;
 async function request(body, query = '') {
@@ -16,7 +18,7 @@ async function request(body, query = '') {
   if (!response.ok) throw Object.assign(new Error(result.error || '通信に失敗しました。'), { status: response.status });
   return result;
 }
-function unsaved() { return dialogDirty || dialogBusy || [...cells.values()].some(cell => cell.dirty || cell.inflight || cell.composing); }
+function unsaved() { return !!activeSlot || dialogDirty || dialogBusy || [...cells.values()].some(cell => cell.dirty || cell.inflight || cell.composing); }
 function status() {
   const list = [...cells.values()], failed = list.filter(cell => cell.error).length, waiting = list.filter(cell => cell.dirty || cell.inflight).length;
   $('status').textContent = failed ? `${failed}件を保存できませんでした。入力は保持しています。` : waiting ? `${waiting}件が未保存・保存中です。` : lastSync ? `同期済み · ${lastSync}` : '読み込み中…';
@@ -34,10 +36,25 @@ function setMode() {
 function authExpired() { authenticated = false; pin = ''; $('pin').value = ''; $('auth-message').textContent = '認証が切れました。入力を保持しています。PINを入力し直してください。'; setMode(); if (activeSlot) { $('dialog-auth').hidden = false; $('dialog-save').disabled = true; } }
 function buildMonth() {
   cells.clear(); slots.clear(); $('days').replaceChildren();
-  const [year, number] = month.split('-'); $('month-title').textContent = `${year}年${Number(number)}月`;
+  const range = dates();
+  if (!range.includes(selectedDate)) selectedDate = range[0];
+  const [year, number] = month.split('-'); $('month-title').textContent = view === 'month' ? `${year}年${Number(number)}月` : `${range[0]} 〜 ${range.at(-1)}`;
+  $('prev').textContent = view === 'month' ? '← 前月' : '← 前の2週間';
+  $('next').textContent = view === 'month' ? '翌月 →' : '次の2週間 →';
+  for (const mode of ['month', 'fortnight']) $(`view-${mode}`).setAttribute('aria-pressed', String(view === mode));
+  dayButtons.clear(); $('calendar').replaceChildren();
+  const blanks = (new Date(`${range[0]}T12:00:00Z`).getUTCDay() + 6) % 7;
+  for (let i = 0; i < blanks; i++) $('calendar').append(document.createElement('span'));
   for (const date of dates()) {
     const day = new Date(`${date}T12:00:00Z`).getUTCDay();
-    const row = document.createElement('tr'); if (day === 0 || day === 6) row.classList.add('weekend'); if (date === localDate()) row.classList.add('is-today');
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'calendar-day';
+    if (day === 0 || day === 6) button.classList.add('weekend');
+    if (date === localDate()) { button.classList.add('is-today'); button.setAttribute('aria-current', 'date'); }
+    const number = document.createElement('span'), summary = document.createElement('span');
+    number.className = 'day-number'; number.textContent = Number(date.slice(-2)); summary.className = 'day-summary';
+    button.append(number, summary); button.setAttribute('aria-label', date); button.onclick = () => selectDay(date);
+    dayButtons.set(date, { button, summary }); $('calendar').append(button);
+    const row = document.createElement('tr'); row.dataset.date = date; if (day === 0 || day === 6) row.classList.add('weekend'); if (date === localDate()) row.classList.add('is-today');
     const heading = document.createElement('th'); heading.scope = 'row'; heading.textContent = `${Number(date.slice(-2))}日（${'日月火水木金土'[day]}）`;
     if (date === localDate()) { const badge = document.createElement('span'); badge.className = 'today-badge'; badge.textContent = '今日'; heading.append(badge); }
     const meta = document.createElement('div'); meta.className = 'meta'; heading.append(meta); row.append(heading);
@@ -59,7 +76,14 @@ function buildMonth() {
     }
     $('days').append(row);
   }
-  setMode();
+  for (let i = 0; i < (7 - (blanks + range.length) % 7) % 7; i++) $('calendar').append(document.createElement('span'));
+  setMode(); selectDay(selectedDate, true);
+}
+function selectDay(date, initial = false) {
+  if (!initial && unsaved()) { $('status').textContent = '未保存の入力があります。保存・再試行してから日付を移動してください。'; return; }
+  selectedDate = date; $('detail-title').textContent = `${date} の予定`;
+  for (const row of $('days').children) row.hidden = row.dataset.date !== date;
+  for (const [key, day] of dayButtons) { day.button.setAttribute('aria-pressed', String(key === date)); }
 }
 function schedule(cell) { clearTimeout(cell.timer); if (!cell.error) cell.timer = setTimeout(() => save(cell), 500); }
 async function save(cell) {
@@ -71,15 +95,24 @@ async function save(cell) {
   try {
     const result = await request({ action: 'save', editor_name: editor, entry_date: cell.date, field: cell.field, value });
     succeeded = true;
-    if (cell.version === version) { cell.dirty = false; cell.display.textContent = value; cellStatus(cell, result.history_saved === false ? '保存済み · 履歴同期待ち' : '保存済み', 'saved'); }
+    if (cell.version === version) { cell.dirty = false; cell.display.textContent = value; paintDay(result.row); cellStatus(cell, result.history_saved === false ? '保存済み · 履歴同期待ち' : '保存済み', 'saved'); }
     cell.meta.textContent = `${result.row.last_editor} · ${formatTime(result.row.updated_at)}`;
   } catch (error) { cell.error = error.message; cellStatus(cell, error.message, 'error'); if (error.status === 401) authExpired(); }
   finally { writeEpoch++; cell.inflight = false; status(); if (succeeded && cell.dirty && !cell.composing) schedule(cell); }
+}
+function paintDay(row) {
+  const day = dayButtons.get(row.entry_date);
+  if (!day) return;
+  const parts = ['slot1', 'slot2'].map(field => row[field + '_title'] || row[field]).filter(Boolean);
+  if (row.note) parts.push(row.note);
+  day.summary.textContent = parts.join(' / ');
+  day.button.setAttribute('aria-label', `${row.entry_date} ${parts.join(' / ') || '予定なし'}`);
 }
 function paint(data) {
   base = data.base;
   for (let i = 0; i < 2; i++) { const heading = $(`slot${i + 1}-heading`); heading.replaceChildren(document.createTextNode(base.slots[i].label)); const time = document.createElement('span'); time.className = 'slot-time'; time.textContent = base.slots[i].time; heading.append(time); }
   for (const row of data.entries) {
+    paintDay(row);
     for (const field of FIELDS) {
       if (field !== 'note') { updateSlot(slots.get(`${row.entry_date}:${field}`), row); continue; }
       const cell = cells.get(`${row.entry_date}:${field}`); if (!cell) continue;
@@ -105,13 +138,17 @@ async function runSync() {
   catch (error) { if (sequence === loadSequence) $('status').textContent = `同期できません：${error.message}`; return false; }
   finally { polling = false; }
 }
-function changeMonth(offset) {
-  if (unsaved()) { $('status').textContent = '未保存の入力があります。保存・再試行してから月を移動してください。'; return; }
+function changePeriod(offset, mode = view) {
+  if (unsaved()) { $('status').textContent = '未保存の入力があります。保存・再試行してから表示を切り替えてください。'; return; }
   if (polling) return;
-  const [year, number] = month.split('-').map(Number); month = offset === null ? localDate().slice(0, 7) : localDate(new Date(year, number - 1 + offset, 1)).slice(0, 7);
+  if (mode !== view) { anchor = selectedDate; month = selectedDate.slice(0, 7); view = mode; }
+  else if (offset === null) { anchor = localDate(); month = anchor.slice(0, 7); selectedDate = anchor; }
+  else if (view === 'fortnight') anchor = shiftDate(dates()[0], offset * 14);
+  else { const [year, number] = month.split('-').map(Number); month = localDate(new Date(year, number - 1 + offset, 1)).slice(0, 7); }
   loadSequence++; lastSync = ''; buildMonth(); sync();
 }
-$('prev').onclick = () => changeMonth(-1); $('next').onclick = () => changeMonth(1); $('today').onclick = () => changeMonth(null);
+$('prev').onclick = () => changePeriod(-1); $('next').onclick = () => changePeriod(1); $('today').onclick = () => changePeriod(null);
+$('view-month').onclick = () => changePeriod(0, 'month'); $('view-fortnight').onclick = () => changePeriod(0, 'fortnight');
 $('auth-form').onsubmit = async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;
   try { editor = textLimit($('editor').value, 40, '編集者名', true).trim(); pin = $('pin').value; await request({ action: 'verify' }); authenticated = true; $('pin').value = ''; $('auth-message').textContent = ''; setMode(); status(); if ([...cells.values()].some(cell => cell.dirty)) $('status').textContent = '入力を保持しています。「未保存の予定を再試行」で保存できます。'; }
@@ -166,7 +203,7 @@ $('slot-form').onsubmit = async event => {
   writeEpoch++; setDialogBusy(true); $('dialog-message').textContent = '保存中…';
   try {
     const result = await request({ action: 'save_slot', editor_name: editor, entry_date: slot.date, slot: slot.field, title, content });
-    updateSlot(slot, result.row); dialogDirty = false; $('slot-dialog').close();
+    updateSlot(slot, result.row); paintDay(result.row); dialogDirty = false; $('slot-dialog').close();
     $('status').textContent = result.history_saved === false ? 'コマを保存しました。履歴は同期待ちです。' : 'コマを保存しました。';
   } catch (error) { $('dialog-message').textContent = `${error.message} 入力は保持しています。`; if (error.status === 401) authExpired(); }
   finally { writeEpoch++; setDialogBusy(false); }

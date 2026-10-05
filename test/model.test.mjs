@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthRange, validateBase, effectiveEntry, DEFAULT_BASE, dateRange } from '../public/model.mjs';
+import { monthRange, validateBase, effectiveEntry, DEFAULT_BASE, dateRange, fortnightRange, shiftDate } from '../public/model.mjs';
 
 test('月の日数・うるう年・年末を正しく生成する', () => {
   assert.equal(monthRange('2026-02').length, 28);
@@ -36,4 +36,14 @@ test('時間割と追加見出し・内容を独立して返し、既存デー�
   assert.equal(row.slot1, '既存'); assert.equal(row.slot1_title, '見出し'); assert.equal(row.slot1_content, '内容');
   assert.equal(row.slot2_title, ''); assert.equal(row.slot2_content, '');
   assert.deepEqual(raw, { slot1: '既存', slot1_title: '見出し', slot1_content: '内容', note: '備考' });
+});
+
+test('2週間は月曜から日曜まで14日で、月年と閏日をまたぐ', () => {
+  assert.equal(fortnightRange('2026-10-11')[0], '2026-10-05');
+  assert.equal(fortnightRange('2026-10-05').at(-1), '2026-10-18');
+  assert.equal(fortnightRange('2027-01-01')[0], '2026-12-28');
+  assert.equal(fortnightRange('2028-02-29').length, 14);
+  assert.equal(shiftDate('2026-12-28', 14), '2027-01-11');
+  assert.equal(shiftDate('2027-01-11', -14), '2026-12-28');
+  assert.throws(() => fortnightRange('2026-02-30'));
 });
