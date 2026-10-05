@@ -4,7 +4,7 @@
 <section id="auth" hidden aria-labelledby="auth-title"><h2 id="auth-title">編集を開始</h2><form id="auth-form"><label>編集者名<input id="editor" required maxlength="40" autocomplete="name"></label><label>編集用PIN<input id="pin" type="password" required autocomplete="off"></label><button type="submit">編集を開始</button></form><p id="auth-message" role="status"></p></section>
 <div class="view-switch" role="group" aria-label="表示期間"><button id="view-month" aria-pressed="true">月間</button><button id="view-fortnight" aria-pressed="false">2週間</button></div>
 <nav aria-label="表示する期間"><button id="prev">← 前月</button><h2 id="month-title"></h2><button id="next">翌月 →</button><button id="today">今日</button></nav>
-<div class="weekdays" aria-hidden="true"><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span><span>日</span></div><div id="calendar" class="calendar" aria-label="予定カレンダー"></div>
+<div class="weekdays" aria-hidden="true"><span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span></div><div id="calendar" class="calendar" aria-label="予定カレンダー"></div>
 <h2 id="detail-title" class="detail-title"></h2>
 <div class="status-bar"><p id="status" role="status" aria-live="polite">読み込み中…</p><button id="retry" hidden>未保存の予定を再試行</button></div><p id="mode">閲覧専用 · 3秒ごとに同期</p>
 <div class="table-wrap" tabindex="0" aria-label="選択日の予定"><table><thead><tr><th scope="col">日付</th><th scope="col" id="slot1-heading">1コマ目</th><th scope="col" id="slot2-heading">2コマ目</th><th scope="col">備考</th></tr></thead><tbody id="days"></tbody></table></div>

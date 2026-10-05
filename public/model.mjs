@@ -38,7 +38,7 @@ export function shiftDate(value, days) {
 
 export function fortnightRange(value) {
   const day = parseDate(value).getUTCDay();
-  const start = shiftDate(value, -((day + 6) % 7));
+  const start = shiftDate(value, -day);
   return dateRange(start, shiftDate(start, 13));
 }
 
