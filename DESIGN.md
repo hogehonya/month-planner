@@ -27,6 +27,12 @@ Vanilla HTML/CSS/JavaScript、Netlify Functions、Netlify Blobsだけで構成�
 
 セルの優先順位は **個別編集 > 日付例外 > 曜日設定 > 空欄**。明示的な空文字も個別編集として保持する。時間割の変更は個別編集を上書きしない。コマの見出し・内容はこの時間割とは別のフィールドとして保持する。
 
+## 追加予定のJSON取込
+
+PIN編集画面でJSON貼付またはファイル選択から全件を検証し、日付と指定された更新値をプレビューする。既存値が指定値へ更新されることを明示し、確認後に取り込む。形式は `{"entries":[{"entry_date":"2026-10-06","slot1_title":"見出し","slot1_content":"内容","note":"備考"}]}`。指定可能なのは `entry_date` と午前・午後の `slot1_title` / `slot1_content` / `slot2_title` / `slot2_content` / `note` のみ。1〜31日、重複日付不可、各日1項目以上。見出し120文字、内容・備考3000文字。空文字は明示的な空欄への更新、省略項目と固定時間割は保持する。未知項目、不正日付・型、過大入力を拒否する。JSONファイルとAPIリクエストは256KiB以内。
+
+サーバーでも全件検証してから、日ごとのCASと既存の履歴転記で保存する。日をまたぐトランザクションはない。結果は各日の保存済み・未保存を表示し、部分失敗や通信失敗でも入力とプレビューを保持して再試行できる。同値再送は履歴を増やさない。未保存の日別編集・開いたコマダイアログがある間は取込を開始しない。送信中は日別編集・期間移動・JSON変更・二重送信を防ぎ、同期結果を適用しない。入力変更やファイル読込開始で古いプレビューを無効化する。401では入力を保持してPIN再入力へ誘導する。
+
 ## 保存形式と整合性
 
 サイト単位の `shared-planner` ストアをstrong consistencyで使用する。再デプロイで予定を失わない。
@@ -49,6 +55,7 @@ Vanilla HTML/CSS/JavaScript、Netlify Functions、Netlify Blobsだけで構成�
 - POST `action=verify`: PINを確認し `ok` を返す。
 - POST `action=save`: `field=note` のみ。`editor_name`, `entry_date`, `value` を検証して備考を保存。slot1/slot2の旧編集は拒否する。
 - POST `action=save_slot`: `editor_name`, `entry_date`, `slot`（slot1/slot2）, `title`（120文字以内）, `content`（3000文字以内）を検証し、両項目を1回のCASで保存。
+- POST `action=import_entries`: `editor_name`, `entries` を全件検証し、指定された追加予定のフィールドだけを日単位で保存。`results` に各日の日付、`saved`、成功時の `row` と `history_saved`、失敗時の `error` を返す。部分失敗も200で結果を返す。
 - POST `action=base`: 403で拒否する。
 
 編集者名は空白のみ不可・40文字以内。PINはSHA-256で固定長にして `timingSafeEqual` で比較する。不一致は約300ms待って401。未設定は編集を503で拒否する。JSON入力は256KiBまで。エラーに秘密値・内部例外を含めない。同一origin以外からのPOSTを拒否する。

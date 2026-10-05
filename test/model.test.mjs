@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthRange, validateBase, effectiveEntry, DEFAULT_BASE, dateRange, fortnightRange, shiftDate } from '../public/model.mjs';
+import { monthRange, validateBase, effectiveEntry, DEFAULT_BASE, dateRange, fortnightRange, shiftDate, validateImport } from '../public/model.mjs';
 
 test('月の日数・うるう年・年末を正しく生成する', () => {
   assert.equal(monthRange('2026-02').length, 28);
@@ -53,4 +53,19 @@ test('2週間は日曜から土曜まで14日で、月年と閏日をまたぐ',
   assert.equal(shiftDate('2026-12-27', 14), '2027-01-10');
   assert.equal(shiftDate('2027-01-10', -14), '2026-12-27');
   assert.throws(() => fortnightRange('2026-02-30'));
+});
+
+test('追加予定JSONは指定項目と明示空欄を保持し、不正な全体を拒否する', () => {
+  const input = { entries: [{ entry_date: '2026-10-06', slot1_title: '朝', note: '' }] };
+  assert.deepEqual(validateImport(input), input.entries);
+  assert.equal(Object.hasOwn(validateImport(input)[0], 'slot1_content'), false);
+  for (const value of [null, [], {}, { entries: [] }, { entries: [{ entry_date: '2026-10-06' }] },
+    { entries: [{ entry_date: '2026-02-30', note: 'x' }] },
+    { entries: [{ entry_date: '2026-10-06', slot1: '固定変更' }] },
+    { entries: [{ entry_date: '2026-10-06', note: 1 }] },
+    { entries: [{ entry_date: '2026-10-06', slot2_title: 'x'.repeat(121) }] },
+    { entries: [{ entry_date: '2026-10-06', slot2_content: 'x'.repeat(3001) }] },
+    { entries: [input.entries[0], input.entries[0]] }, { ...input, unknown: true },
+    { entries: Array.from({ length: 32 }, (_, i) => ({ entry_date: `2026-10-${String(i + 1).padStart(2, '0')}`, note: 'x' })) },
+  ]) assert.throws(() => validateImport(value));
 });
