@@ -48,3 +48,5 @@ dialog::backdrop{background:#0008}.dialog-header{display:flex;align-items:start;
 @media(max-width:600px){.day-heading{gap:2px}.day-timetable{font-size:11px}}
 
 #import-panel{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:20px;margin-top:24px}#import-panel label{margin-top:16px}#import-preview dl{border:1px solid var(--line);padding:12px;margin:12px 0}#import-preview dt{font-weight:600}#import-preview dd{margin:4px 0 12px;white-space:pre-wrap;overflow-wrap:anywhere}#import-results{padding-left:24px;overflow-wrap:anywhere}@media(max-width:600px){#import-panel{padding:14px}}
+
+#help-view{max-width:800px;margin:24px auto;padding:20px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.help-header{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}#help-view h3{margin:28px 0 8px}#help-view pre{max-width:100%;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere}#help-view code{font-size:.9em}#help-view li{margin:8px 0}#help-view a{display:inline-block;padding:8px 0;min-height:44px}@media(max-width:600px){#help-view{padding:14px}}

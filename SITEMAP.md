@@ -5,12 +5,13 @@
 | URL | 操作 |
 | --- | --- |
 | `/` | 月間／2週間カレンダー、選択日の詳細と最近の編集履歴を閲覧 |
+| `/#help` / `/?edit=1#help` | SPA内の取説を表示。編集状態を保持してカレンダーへ戻る |
 | `/?edit=1` | PIN認証後にコマの見出し・内容をダイアログで編集、備考を編集、追加予定JSONを検証・プレビューして取込 |
 | `/entries.example.json` | 追加予定JSONの雛形 |
 | `/base.example.json` | 時間割JSONの雛形 |
 | `/.netlify/functions/planner` | 予定・設定・履歴の取得、PIN検証、保存 |
 
-`public/index.html`、`style.css`、`app.mjs` が画面、`public/model.mjs` が共通検証、`netlify/functions/planner.mjs` がAPIです。設計判断とデータ形式の正本は `DESIGN.md`、公開手順は `README.md` です。
+`public/index.html`、`style.css`、`app.mjs` が画面、`public/help.mjs` が取説ビューの切替、`public/model.mjs` が共通検証、`netlify/functions/planner.mjs` がAPIです。設計判断とデータ形式の正本は `DESIGN.md`、公開手順は `README.md` です。
 
 後回しにする同時更新の検証は `docs/concurrency-issue.md` に記録しています。
 
