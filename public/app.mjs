@@ -43,7 +43,7 @@ function buildMonth() {
   $('next').textContent = view === 'month' ? '翌月 →' : '次の2週間 →';
   for (const mode of ['month', 'fortnight']) $(`view-${mode}`).setAttribute('aria-pressed', String(view === mode));
   dayButtons.clear(); $('calendar').replaceChildren();
-  const blanks = (new Date(`${range[0]}T12:00:00Z`).getUTCDay() + 6) % 7;
+  const blanks = new Date(`${range[0]}T12:00:00Z`).getUTCDay();
   for (let i = 0; i < blanks; i++) $('calendar').append(document.createElement('span'));
   for (const date of dates()) {
     const day = new Date(`${date}T12:00:00Z`).getUTCDay();
