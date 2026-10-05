@@ -70,3 +70,15 @@ test('実SDKで既存時間割と追加コマ内容・備考・履歴を保持�
   assert.deepEqual((await store.get('entries/2026-10-05.json', { type: 'json' }))._pending_history, []);
   assert.equal((await (await get()).json()).history.length, 2);
 });
+
+test('実SDKで写真バイナリとMIMEを保存して公開GETから取得できる', async t => {
+  const { store } = await fixture(t);
+  const bytes = Buffer.from('89504e470d0a1a0a0000000049454e44ae426082', 'hex');
+  const id = 'a'.repeat(64);
+  assert.equal((await store.set(`photos/${id}`, bytes, { onlyIfNew: true, metadata: { mime: 'image/png', size: bytes.length } })).modified, true);
+  assert.equal((await store.set(`photos/${id}`, bytes, { onlyIfNew: true, metadata: { mime: 'image/png', size: bytes.length } })).modified, false);
+  const handler = createHandler({ getStore: () => store });
+  const response = await handler(new Request(`https://planner.example/api/planner?photo=${id}`));
+  assert.equal(response.status, 200); assert.equal(response.headers.get('Content-Type'), 'image/png');
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
+});

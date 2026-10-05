@@ -1,10 +1,11 @@
-import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, fortnightRange, shiftDate, localDate, validateSlot, textLimit, validateImport } from './model.mjs';
+import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, fortnightRange, shiftDate, localDate, validateSlot, textLimit, validateImport, PHOTO_LIMIT, PHOTO_MIMES } from './model.mjs';
 const $ = id => document.getElementById(id);
 const API = '/.netlify/functions/planner';
 const editingRequested = new URLSearchParams(location.search).get('edit') === '1';
 let month = localDate().slice(0, 7), pin = '', editor = '', authenticated = false, base = DEFAULT_BASE;
 let pendingSync = null, writeEpoch = 0, activeSlot = null, dialogBusy = false, dialogDirty = false, dialogComposing = false, dialogReturnFocus = null;
 let loadSequence = 0, polling = false, lastSync = '';
+let photoFile = null;
 let importBusy = false, importPreview = null, importVersion = 0, importComposing = false, importReading = false;
 const slots = new Map();
 const cells = new Map();
@@ -14,7 +15,12 @@ const dates = () => view === 'month' ? monthRange(month) : fortnightRange(anchor
 const formatTime = value => value ? new Date(value).toLocaleString('ja-JP') : '';
 const fieldLabel = field => field === 'base' ? '時間割' : field === 'note' ? '備考' : base.slots[field.startsWith('slot1') ? 0 : 1].label;
 async function request(body, query = '') {
-  const response = await fetch(API + query, body ? { signal: AbortSignal.timeout(body.action === 'import_entries' ? 60000 : 10000), method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, pin }) } : { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+  let options;
+  if (body?.action === 'upload_photo') {
+    query = '?' + new URLSearchParams({ action: 'upload_photo', entry_date: body.entry_date, slot: body.slot });
+    options = { signal: AbortSignal.timeout(60000), method: 'POST', headers: { 'Content-Type': body.file.type, 'X-Edit-Pin': pin, 'X-Editor-Name': encodeURIComponent(editor) }, body: body.file };
+  } else options = body ? { signal: AbortSignal.timeout(body.action === 'import_entries' ? 60000 : 10000), method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, pin }) } : { cache: 'no-store', signal: AbortSignal.timeout(10000) };
+  const response = await fetch(API + query, options);
   let result; try { result = await response.json(); } catch { throw new Error('サーバーの応答を確認できません。再試行してください。'); }
   if (!response.ok) throw Object.assign(new Error(result.error || '通信に失敗しました。'), { status: response.status });
   return result;
@@ -36,7 +42,7 @@ function setMode() {
   for (const slot of slots.values()) { slot.button.textContent = authenticated ? '見出し・内容を編集' : '編集する'; slot.button.disabled = importBusy; }
   for (const cell of cells.values()) { cell.input.hidden = !editingRequested; cell.input.readOnly = !authenticated || importBusy; cell.display.hidden = editingRequested; }
 }
-function authExpired() { authenticated = false; pin = ''; $('pin').value = ''; $('auth-message').textContent = '認証が切れました。入力を保持しています。PINを入力し直してください。'; setMode(); if (activeSlot) { $('dialog-auth').hidden = false; $('dialog-save').disabled = true; } }
+function authExpired() { authenticated = false; pin = ''; $('pin').value = ''; $('auth-message').textContent = '認証が切れました。入力を保持しています。PINを入力し直してください。'; setMode(); if (activeSlot) { $('dialog-auth').hidden = false; $('dialog-save').disabled = true; $('photo-save').disabled = true; } }
 function buildMonth() {
   cells.clear(); slots.clear(); $('days').replaceChildren();
   const range = dates();
@@ -64,10 +70,11 @@ function buildMonth() {
     const meta = document.createElement('div'); meta.className = 'meta'; heading.append(meta); row.append(heading);
     for (const field of FIELDS) {
       if (field !== 'note') {
-        const td = document.createElement('td'), timetable = document.createElement('div'), title = document.createElement('div'), content = document.createElement('div'), button = document.createElement('button');
+        const td = document.createElement('td'), timetable = document.createElement('div'), title = document.createElement('div'), content = document.createElement('div'), image = document.createElement('img'), button = document.createElement('button');
+        image.className = 'slot-photo'; image.hidden = true; image.loading = 'lazy';
         td.dataset.label = fieldLabel(field); timetable.className = 'timetable'; title.className = 'slot-title'; content.className = 'slot-content'; button.type = 'button'; button.textContent = '編集する';
-        const slot = { date, field, td, timetable, title, content, button, meta, titleValue: '', contentValue: '' };
-        button.onclick = () => openSlot(slot); slots.set(`${date}:${field}`, slot); td.append(timetable, title, content, button); row.append(td); continue;
+        const slot = { date, field, td, timetable, title, content, image, button, meta, titleValue: '', contentValue: '' };
+        button.onclick = () => openSlot(slot); slots.set(`${date}:${field}`, slot); td.append(timetable, title, content, image, button); row.append(td); continue;
       }
       const td = document.createElement('td'), display = document.createElement('div'), input = document.createElement('textarea'), message = document.createElement('div');
       td.dataset.label = fieldLabel(field); display.className = 'cell-value'; message.className = 'cell-status'; input.rows = 3; input.setAttribute('aria-label', `${date} ${fieldLabel(field)}`); input.maxLength = LIMITS[field] * 2;
@@ -170,6 +177,8 @@ function updateSlot(slot, row) {
   slot.timetable.textContent = row[slot.field] || '時間割なし';
   slot.titleValue = row[slot.field + '_title']; slot.contentValue = row[slot.field + '_content'];
   slot.title.textContent = slot.titleValue; slot.content.textContent = slot.contentValue;
+  slot.photo = row[slot.field + '_photo'];
+  showPhoto(slot.image, slot.photo, `${slot.date} ${slot.field === 'slot1' ? '午前' : '午後'}の写真`);
   slot.button.setAttribute('aria-label', `${slot.date} ${info.label}の見出し・内容を編集`);
   slot.meta.textContent = row.last_editor ? `${row.last_editor} · ${formatTime(row.updated_at)}` : '';
 }
@@ -180,7 +189,8 @@ function openSlot(slot) {
     $('auth').hidden = false; $('auth-message').textContent = '編集するには編集者名とPINを入力してください。'; $('editor').focus(); return;
   }
   if (activeSlot) return;
-  activeSlot = slot; dialogReturnFocus = slot.button; dialogDirty = false; dialogComposing = false;
+  activeSlot = slot; dialogReturnFocus = slot.button; dialogDirty = false; dialogComposing = false; photoFile = null; $('slot-photo-file').value = ''; $('photo-message').textContent = '';
+  showPhoto($('dialog-photo'), slot.photo, `${slot.date} ${slot.field === 'slot1' ? '午前' : '午後'}の写真`); $('photo-save').disabled = true;
   const info = base.slots[slot.field === 'slot1' ? 0 : 1];
   const period = slot.field === 'slot1' ? '午前' : '午後';
   $('dialog-heading').textContent = `${slot.date} ${period}${info.label === period ? '' : `（${info.label}）`}を編集`;
@@ -192,7 +202,7 @@ function openSlot(slot) {
 function cancelDialog() { if (!dialogBusy) $('slot-dialog').close(); }
 $('dialog-close').onclick = cancelDialog; $('dialog-cancel').onclick = cancelDialog;
 $('slot-dialog').addEventListener('cancel', event => { event.preventDefault(); cancelDialog(); });
-$('slot-dialog').addEventListener('close', () => { activeSlot = null; dialogDirty = false; dialogComposing = false; $('dialog-pin').value = ''; dialogReturnFocus?.focus(); dialogReturnFocus = null; });
+$('slot-dialog').addEventListener('close', () => { activeSlot = null; photoFile = null; $('slot-photo-file').value = ''; dialogDirty = false; dialogComposing = false; $('dialog-pin').value = ''; dialogReturnFocus?.focus(); dialogReturnFocus = null; });
 for (const id of ['slot-title', 'slot-content']) {
   $(id).addEventListener('input', () => { dialogDirty = true; });
   $(id).addEventListener('compositionstart', () => { dialogComposing = true; });
@@ -200,11 +210,13 @@ for (const id of ['slot-title', 'slot-content']) {
 }
 function setDialogBusy(busy) {
   dialogBusy = busy;
-  for (const id of ['slot-title', 'slot-content', 'dialog-close', 'dialog-cancel', 'dialog-verify', 'dialog-pin']) $(id).disabled = busy;
+  for (const id of ['slot-title', 'slot-content', 'dialog-close', 'dialog-cancel', 'dialog-verify', 'dialog-pin', 'slot-photo-file']) $(id).disabled = busy;
   $('dialog-save').disabled = busy || !authenticated;
+  $('photo-save').disabled = busy || !authenticated || !photoFile;
 }
 $('slot-form').onsubmit = async event => {
   event.preventDefault(); if (!activeSlot || dialogBusy || dialogComposing || !authenticated) return;
+  if (photoFile) { $('dialog-message').textContent = '選択した写真を「写真を保存」で保存してから見出し・内容を保存してください。'; return; }
   const slot = activeSlot, title = $('slot-title').value, content = $('slot-content').value;
   try { validateSlot(slot.field, title, content); } catch (error) { $('dialog-message').textContent = error.message; return; }
   writeEpoch++; setDialogBusy(true); $('dialog-message').textContent = '保存中…';
@@ -221,6 +233,35 @@ $('dialog-verify').onclick = async () => {
   try { await request({ action: 'verify' }); authenticated = true; $('dialog-pin').value = ''; $('dialog-auth').hidden = true; setMode(); $('dialog-message').textContent = '再認証しました。「保存」を押してください。'; }
   catch (error) { pin = ''; $('dialog-auth-message').textContent = error.message; }
   finally { setDialogBusy(false); }
+};
+function showPhoto(image, photo, alt) {
+  image.hidden = !photo; image.alt = alt;
+  if (photo) { if (image.getAttribute('src') !== photo.url) image.src = photo.url; }
+  else image.removeAttribute('src');
+}
+$('slot-photo-file').onchange = () => {
+  if (dialogBusy) return;
+  const file = $('slot-photo-file').files[0]; photoFile = null;
+  if (file) {
+    if (!PHOTO_MIMES.includes(file.type) || !file.size || file.size > PHOTO_LIMIT) {
+      $('photo-message').textContent = 'JPEG・PNG・WebP、1枚2MiB以内の写真を選んでください。'; $('slot-photo-file').value = '';
+    } else { photoFile = file; dialogDirty = true; $('photo-message').textContent = `${file.name}を選択しました。「写真を保存」で共有します。`; }
+  }
+  $('photo-save').disabled = !photoFile || !authenticated;
+};
+$('photo-save').onclick = async () => {
+  if (!activeSlot || !photoFile || dialogBusy || dialogComposing || !authenticated) return;
+  const slot = activeSlot, file = photoFile;
+  writeEpoch++; setDialogBusy(true); $('photo-message').textContent = '写真を保存中…';
+  try {
+    const result = await request({ action: 'upload_photo', entry_date: slot.date, slot: slot.field, file });
+    updateSlot(slot, result.row); showPhoto($('dialog-photo'), slot.photo, `${slot.date} ${slot.field === 'slot1' ? '午前' : '午後'}の写真`);
+    photoFile = null; $('slot-photo-file').value = '';
+    $('photo-message').textContent = result.history_saved === false ? '写真は保存済みです。履歴は同期待ちです。' : '写真を保存しました。見出し・内容の入力は保持しています。';
+  } catch (error) {
+    $('photo-message').textContent = `${error.message} 画面の写真と選択ファイルを保持しています。通信が途切れた場合は保存結果が未確認です。同じ写真を再送できます。`;
+    if (error.status === 401) authExpired();
+  } finally { writeEpoch++; setDialogBusy(false); }
 };
 const importLabels = { slot1_title: '午前の見出し', slot1_content: '午前の内容', slot2_title: '午後の見出し', slot2_content: '午後の内容', note: '備考' };
 function setImportControls() {
