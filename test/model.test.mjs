@@ -29,3 +29,11 @@ test('不正な時間割・未知のキー・型・過大入力を拒否する',
   ]) assert.throws(() => validateBase({ ...DEFAULT_BASE, ...patch }));
   assert.throws(() => validateBase(JSON.parse('{"slots":[{"label":"a"},{"label":"b"}],"weekdays":{"__proto__":{}}}')));
 });
+
+test('時間割と追加見出し・内容を独立して返し、既存データを移行せず読む', () => {
+  const raw = { slot1: '既存', slot1_title: '見出し', slot1_content: '内容', note: '備考' };
+  const row = effectiveEntry('2026-10-05', raw, DEFAULT_BASE);
+  assert.equal(row.slot1, '既存'); assert.equal(row.slot1_title, '見出し'); assert.equal(row.slot1_content, '内容');
+  assert.equal(row.slot2_title, ''); assert.equal(row.slot2_content, '');
+  assert.deepEqual(raw, { slot1: '既存', slot1_title: '見出し', slot1_content: '内容', note: '備考' });
+});

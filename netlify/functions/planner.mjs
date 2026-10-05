@@ -1,7 +1,7 @@
 import { getStore } from '@netlify/blobs';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { dateRange, parseDate, textLimit, validateBase, effectiveEntry, DEFAULT_BASE, FIELDS, LIMITS } from '../../public/model.mjs';
+import { dateRange, parseDate, textLimit, validateSlot, effectiveEntry, DEFAULT_BASE, LIMITS } from '../../public/model.mjs';
 
 const BASE_KEY = 'settings/base.json';
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
@@ -93,36 +93,28 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'sh
       let editor;
       try { editor = textLimit(body.editor_name, 40, '編集者名', true).trim(); }
       catch (e) { throw error(400, e.message); }
+      if (body.action === 'base') throw error(403, '取り込んだ時間割は変更できません。');
       const store = openStore();
-      if (body.action === 'save') {
+      if (body.action === 'save' || body.action === 'save_slot') {
+        let patch;
         try {
           parseDate(body.entry_date);
-          if (!FIELDS.includes(body.field)) throw new Error('編集対象の欄を確認してください。');
-          textLimit(body.value, LIMITS[body.field], '入力内容');
+          if (body.action === 'save_slot') patch = validateSlot(body.slot, body.title, body.content);
+          else {
+            if (body.field !== 'note') throw new Error('時間割は変更できません。備考またはコマの見出し・内容を編集してください。');
+            patch = { note: textLimit(body.value, LIMITS.note, '備考') };
+          }
         } catch (e) { throw error(400, e.message); }
         const key = `entries/${body.entry_date}.json`;
         // Read shared defaults before committing so a later read failure cannot mask a successful save.
         const base = (await store.get(BASE_KEY, { type: 'json' }))?.base ?? DEFAULT_BASE;
-        const event = eventFor(body.entry_date, body.field, editor);
+        const event = eventFor(body.entry_date, body.action === 'save_slot' ? body.slot + '_details' : 'note', editor);
         const row = await update(store, key, current => {
-          if (current && Object.hasOwn(current, body.field) && current[body.field] === body.value) return null;
-          return { ...current, entry_date: body.entry_date, [body.field]: body.value, last_editor: editor, updated_at: event.changed_at, _pending_history: [...(current?._pending_history ?? []), event] };
+          if (current && Object.entries(patch).every(([field, value]) => Object.hasOwn(current, field) && current[field] === value)) return null;
+          return { ...current, entry_date: body.entry_date, ...patch, last_editor: editor, updated_at: event.changed_at, _pending_history: [...(current?._pending_history ?? []), event] };
         });
         const historySaved = await flushHistory(store, key);
         return json({ ok: true, row: effectiveEntry(body.entry_date, row, base), history_saved: historySaved });
-      }
-      if (body.action === 'base') {
-        let base;
-        try { base = validateBase(body.base); }
-        catch (e) { throw error(400, e.message); }
-        if (body.expected_etag !== null && typeof body.expected_etag !== 'string') throw error(400, '時間割を再読込してください。');
-        const event = eventFor(null, 'base', editor);
-        await update(store, BASE_KEY, (current, etag) => {
-          if (etag !== body.expected_etag) throw error(409, '他の人が時間割を更新しました。「現在の時間割を読み込む」で確認してください。');
-          return { base, last_editor: editor, updated_at: event.changed_at, _pending_history: [...(current?._pending_history ?? []), event] };
-        });
-        const historySaved = await flushHistory(store, BASE_KEY);
-        return json({ ok: true, base, history_saved: historySaved });
       }
       throw error(400, '操作を確認してください。');
     } catch (e) {

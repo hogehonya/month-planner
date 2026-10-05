@@ -5,7 +5,7 @@
 | URL | 操作 |
 | --- | --- |
 | `/` | 月間予定と最近の編集履歴を閲覧 |
-| `/?edit=1` | PIN認証後にセルを編集、JSON時間割を設定 |
+| `/?edit=1` | PIN認証後にコマの見出し・内容をダイアログで編集、備考を編集 |
 | `/base.example.json` | 時間割JSONの雛形 |
 | `/.netlify/functions/planner` | 予定・設定・履歴の取得、PIN検証、保存 |
 
