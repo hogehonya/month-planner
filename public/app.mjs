@@ -1,10 +1,11 @@
-import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, fortnightRange, shiftDate, localDate, validateSlot, textLimit } from './model.mjs';
+import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, fortnightRange, shiftDate, localDate, validateSlot, textLimit, validateImport } from './model.mjs';
 const $ = id => document.getElementById(id);
 const API = '/.netlify/functions/planner';
 const editingRequested = new URLSearchParams(location.search).get('edit') === '1';
 let month = localDate().slice(0, 7), pin = '', editor = '', authenticated = false, base = DEFAULT_BASE;
 let pendingSync = null, writeEpoch = 0, activeSlot = null, dialogBusy = false, dialogDirty = false, dialogComposing = false, dialogReturnFocus = null;
 let loadSequence = 0, polling = false, lastSync = '';
+let importBusy = false, importPreview = null, importVersion = 0, importComposing = false, importReading = false;
 const slots = new Map();
 const cells = new Map();
 let view = 'month', anchor = localDate(), selectedDate = localDate();
@@ -13,12 +14,12 @@ const dates = () => view === 'month' ? monthRange(month) : fortnightRange(anchor
 const formatTime = value => value ? new Date(value).toLocaleString('ja-JP') : '';
 const fieldLabel = field => field === 'base' ? '時間割' : field === 'note' ? '備考' : base.slots[field.startsWith('slot1') ? 0 : 1].label;
 async function request(body, query = '') {
-  const response = await fetch(API + query, body ? { signal: AbortSignal.timeout(10000), method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, pin }) } : { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+  const response = await fetch(API + query, body ? { signal: AbortSignal.timeout(body.action === 'import_entries' ? 60000 : 10000), method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, pin }) } : { cache: 'no-store', signal: AbortSignal.timeout(10000) });
   let result; try { result = await response.json(); } catch { throw new Error('サーバーの応答を確認できません。再試行してください。'); }
   if (!response.ok) throw Object.assign(new Error(result.error || '通信に失敗しました。'), { status: response.status });
   return result;
 }
-function unsaved() { return !!activeSlot || dialogDirty || dialogBusy || [...cells.values()].some(cell => cell.dirty || cell.inflight || cell.composing); }
+function unsaved() { return importBusy || !!activeSlot || dialogDirty || dialogBusy || [...cells.values()].some(cell => cell.dirty || cell.inflight || cell.composing); }
 function status() {
   const list = [...cells.values()], failed = list.filter(cell => cell.error).length, waiting = list.filter(cell => cell.dirty || cell.inflight).length;
   $('status').textContent = failed ? `${failed}件を保存できませんでした。入力は保持しています。` : waiting ? `${waiting}件が未保存・保存中です。` : lastSync ? `同期済み · ${lastSync}` : '読み込み中…';
@@ -26,12 +27,14 @@ function status() {
 }
 function cellStatus(cell, message = '', state = '') { cell.message.textContent = message; cell.message.dataset.state = state; status(); }
 function setMode() {
+  $('import-panel').hidden = !editingRequested;
+  setImportControls();
   $('auth').hidden = !editingRequested || authenticated;
   $('edit-link').hidden = editingRequested;
   $('logout').hidden = !authenticated;
   $('mode').textContent = authenticated ? `${editor}として編集中 · コマは保存ボタン、備考は自動保存` : '閲覧専用 · 3秒ごとに同期';
-  for (const slot of slots.values()) slot.button.textContent = authenticated ? '見出し・内容を編集' : '編集する';
-  for (const cell of cells.values()) { cell.input.hidden = !editingRequested; cell.input.readOnly = !authenticated; cell.display.hidden = editingRequested; }
+  for (const slot of slots.values()) { slot.button.textContent = authenticated ? '見出し・内容を編集' : '編集する'; slot.button.disabled = importBusy; }
+  for (const cell of cells.values()) { cell.input.hidden = !editingRequested; cell.input.readOnly = !authenticated || importBusy; cell.display.hidden = editingRequested; }
 }
 function authExpired() { authenticated = false; pin = ''; $('pin').value = ''; $('auth-message').textContent = '認証が切れました。入力を保持しています。PINを入力し直してください。'; setMode(); if (activeSlot) { $('dialog-auth').hidden = false; $('dialog-save').disabled = true; } }
 function buildMonth() {
@@ -88,7 +91,7 @@ function selectDay(date, initial = false) {
 }
 function schedule(cell) { clearTimeout(cell.timer); if (!cell.error) cell.timer = setTimeout(() => save(cell), 500); }
 async function save(cell) {
-  if (!cell.dirty || cell.inflight || cell.composing || cell.error || !authenticated) return;
+  if (importBusy || !cell.dirty || cell.inflight || cell.composing || cell.error || !authenticated) return;
   const version = cell.version, value = cell.input.value;
   try { textLimit(value, LIMITS[cell.field], fieldLabel(cell.field)); } catch (error) { cell.error = error.message; cellStatus(cell, error.message, 'error'); return; }
   writeEpoch++; cell.inflight = true; cellStatus(cell, '保存中…');
@@ -131,7 +134,7 @@ function paint(data) {
   lastSync = new Date().toLocaleTimeString('ja-JP'); status();
 }
 async function sync() {
-  if (pendingSync) return false;
+  if (importBusy || pendingSync) return false;
   pendingSync = runSync();
   try { return await pendingSync; } finally { pendingSync = null; }
 }
@@ -171,6 +174,7 @@ function updateSlot(slot, row) {
   slot.meta.textContent = row.last_editor ? `${row.last_editor} · ${formatTime(row.updated_at)}` : '';
 }
 function openSlot(slot) {
+  if (importBusy) return;
   if (!authenticated) {
     if (!editingRequested) { location.href = '?edit=1'; return; }
     $('auth').hidden = false; $('auth-message').textContent = '編集するには編集者名とPINを入力してください。'; $('editor').focus(); return;
@@ -217,6 +221,73 @@ $('dialog-verify').onclick = async () => {
   try { await request({ action: 'verify' }); authenticated = true; $('dialog-pin').value = ''; $('dialog-auth').hidden = true; setMode(); $('dialog-message').textContent = '再認証しました。「保存」を押してください。'; }
   catch (error) { pin = ''; $('dialog-auth-message').textContent = error.message; }
   finally { setDialogBusy(false); }
+};
+const importLabels = { slot1_title: '午前の見出し', slot1_content: '午前の内容', slot2_title: '午後の見出し', slot2_content: '午後の内容', note: '備考' };
+function setImportControls() {
+  for (const id of ['import-json', 'import-file', 'import-preview-button']) $(id).disabled = importBusy || importReading;
+  $('import-submit').disabled = importBusy || importReading || importComposing || !authenticated || !importPreview;
+}
+function invalidateImport() {
+  importVersion++; importPreview = null; $('import-preview').replaceChildren(); $('import-results').replaceChildren();
+  $('import-message').textContent = '入力を検証して更新値を確認してください。'; setImportControls();
+}
+$('import-json').addEventListener('input', invalidateImport);
+$('import-json').addEventListener('compositionstart', () => { importComposing = true; invalidateImport(); });
+$('import-json').addEventListener('compositionend', () => { importComposing = false; setImportControls(); });
+$('import-file').onchange = async () => {
+  const file = $('import-file').files[0]; if (!file || importBusy) return;
+  invalidateImport(); const version = importVersion; importReading = true; setImportControls();
+  try {
+    if (file.size > 262144) throw new Error('JSONは256KiB以内にしてください。');
+    const text = await file.text(); if (version !== importVersion) return;
+    $('import-json').value = text; $('import-message').textContent = 'ファイルを読み込みました。「検証・プレビュー」を押してください。';
+  } catch (error) { if (version === importVersion) $('import-message').textContent = error.message; }
+  finally { importReading = false; $('import-file').value = ''; setImportControls(); }
+};
+$('import-preview-button').onclick = () => {
+  if (importBusy || importReading || importComposing) return;
+  invalidateImport();
+  try {
+    const source = $('import-json').value;
+    if (new TextEncoder().encode(source).length > 262144) throw new Error('JSONは256KiB以内にしてください。');
+    let value; try { value = JSON.parse(source); } catch { throw new Error('JSONの形式を確認してください。'); }
+    const entries = validateImport(value);
+    importPreview = { source, entries };
+    for (const row of entries) {
+      const list = document.createElement('dl'), heading = document.createElement('dt'); heading.textContent = row.entry_date; list.append(heading);
+      for (const [field, value] of Object.entries(row)) {
+        if (field === 'entry_date') continue;
+        const label = document.createElement('dt'), content = document.createElement('dd');
+        label.textContent = importLabels[field]; content.textContent = value === '' ? '（空欄に更新）' : value; list.append(label, content);
+      }
+      $('import-preview').append(list);
+    }
+    $('import-message').textContent = `${entries.length}日分を検証しました。表示された項目の既存値をこの内容で更新します。`;
+  } catch (error) { $('import-message').textContent = error.message; }
+  setImportControls();
+};
+$('import-submit').onclick = async () => {
+  if (importBusy || importReading || importComposing || !importPreview) return;
+  if (!authenticated) { $('auth-message').textContent = 'PINを入力し直してください。'; $('auth').hidden = false; return; }
+  if (unsaved()) { $('import-message').textContent = '未保存の日別入力を保存し、コマのダイアログを閉じてから取り込んでください。'; return; }
+  if (importPreview.source !== $('import-json').value) { invalidateImport(); return; }
+  const body = { action: 'import_entries', editor_name: editor, entries: importPreview.entries };
+  if (new TextEncoder().encode(JSON.stringify({ ...body, pin })).length > 262144) { $('import-message').textContent = '送信するJSONは256KiB以内にしてください。項目を減らしてください。'; return; }
+  importBusy = true; writeEpoch++; setMode(); $('import-message').textContent = '取り込み中…'; $('import-results').replaceChildren();
+  try {
+    if (pendingSync) await pendingSync;
+    const result = await request(body);
+    let saved = 0;
+    for (const row of result.results) {
+      const item = document.createElement('li');
+      item.textContent = `${row.entry_date}：${row.saved ? row.history_saved === false ? '保存済み（履歴同期待ち）' : '保存済み' : `未保存 · ${row.error}`}`;
+      $('import-results').append(item); if (row.saved) saved++;
+    }
+    $('import-message').textContent = saved === result.results.length ? `${saved}日分を取り込みました。同じ値を再送しても履歴は増えません。` : `${saved}日保存済み、${result.results.length - saved}日未保存です。入力を保持しています。再試行できます。`;
+  } catch (error) {
+    $('import-message').textContent = `${error.message} 入力を保持しています。通信失敗時は保存済みか確認できないため、再試行してください。同じ値の再送で履歴は増えません。`;
+    if (error.status === 401) authExpired();
+  } finally { writeEpoch++; importBusy = false; setMode(); sync(); }
 };
 window.addEventListener('beforeunload', event => { if (unsaved()) { event.preventDefault(); event.returnValue = ''; } });
 buildMonth(); sync(); setInterval(() => sync(), 3000);

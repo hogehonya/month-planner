@@ -46,3 +46,5 @@ dialog::backdrop{background:#0008}.dialog-header{display:flex;align-items:start;
 
 .day-heading{display:flex;align-items:center;gap:3px;min-width:0;white-space:nowrap}.day-heading .day-number{flex-shrink:0}.day-timetable{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:1.4}
 @media(max-width:600px){.day-heading{gap:2px}.day-timetable{font-size:11px}}
+
+#import-panel{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:20px;margin-top:24px}#import-panel label{margin-top:16px}#import-preview dl{border:1px solid var(--line);padding:12px;margin:12px 0}#import-preview dt{font-weight:600}#import-preview dd{margin:4px 0 12px;white-space:pre-wrap;overflow-wrap:anywhere}#import-results{padding-left:24px;overflow-wrap:anywhere}@media(max-width:600px){#import-panel{padding:14px}}

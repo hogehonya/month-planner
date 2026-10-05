@@ -118,3 +118,43 @@ test('JSON以外・外部origin・不正な期間を拒否する', async () => {
   assert.equal((await handler(new Request('https://planner.example/', { method: 'POST', headers: { Origin: 'https://other.example', 'Content-Type': 'application/json' }, body: '{}' }))).status, 403);
   assert.equal((await handler(new Request('https://planner.example/?start=2026-01-01&end=2026-03-01'))).status, 400);
 });
+
+test('追加予定取込は全件検証後に指定項目だけ保存し、同値再送の履歴を増やさない', async () => {
+  const { post, data, get } = setup();
+  data.set('entries/2026-10-06.json', { data: { slot1: '固定予定', slot1_content: '保持', slot2_title: '午後保持', note: '旧備考' }, etag: 'initial' });
+  const body = { action: 'import_entries', editor_name: '取込者', entries: [{ entry_date: '2026-10-06', slot1_title: '新見出し', note: '' }, { entry_date: '2026-10-07', slot2_content: '午後内容' }] };
+  assert.equal((await post({ ...body, entries: [...body.entries, { entry_date: '2026-02-30', note: '不正' }] })).status, 400);
+  assert.equal(data.size, 1);
+  assert.equal((await post({ ...body, pin: 'wrong' })).status, 401);
+  const response = await post(body); assert.equal(response.status, 200);
+  const result = await response.json(); assert.ok(result.results.every(row => row.saved));
+  const row = data.get('entries/2026-10-06.json').data;
+  assert.equal(row.slot1, '固定予定'); assert.equal(row.slot1_title, '新見出し'); assert.equal(row.slot1_content, '保持'); assert.equal(row.slot2_title, '午後保持'); assert.equal(row.note, '');
+  const before = (await (await get()).json()).history.length;
+  await post(body); assert.equal((await (await get()).json()).history.length, before);
+  assert.equal((await post({ ...body, entries: [{ entry_date: '2026-10-06', slot1: '変更' }] })).status, 400);
+});
+
+test('追加予定取込の部分失敗と履歴転記失敗は日ごとの結果で再試行できる', async () => {
+  const { post, data, store } = setup();
+  data.set('entries/2026-10-07.json', { data: { note: '保持' } });
+  store.failHistory = true;
+  const body = { action: 'import_entries', editor_name: '取込者', entries: [{ entry_date: '2026-10-06', note: '保存' }, { entry_date: '2026-10-07', note: '失敗' }] };
+  const result = await (await post(body)).json();
+  assert.equal(result.results[0].saved, true); assert.equal(result.results[0].history_saved, false);
+  assert.equal(result.results[1].saved, false); assert.match(result.results[1].error, /保存状態/);
+  assert.equal(data.get('entries/2026-10-07.json').data.note, '保持');
+  data.get('entries/2026-10-07.json').etag = 'recovered'; store.failHistory = false;
+  const retry = await (await post(body)).json(); assert.ok(retry.results.every(row => row.saved));
+  assert.equal([...data.keys()].filter(key => key.startsWith('history/')).length, 2);
+});
+
+test('追加予定取込は日数・重複・項目制限とリクエストサイズを拒否する', async () => {
+  const { post, data } = setup();
+  const body = { action: 'import_entries', editor_name: '取込者' };
+  const entry = { entry_date: '2026-10-06', note: '備考' };
+  for (const entries of [[], [entry, entry], [{ ...entry, note: 'x'.repeat(3001) }], [{ ...entry, slot1_content: null }], [{ ...entry, extra: 'x' }], Array.from({ length: 32 }, () => entry)]) {
+    assert.equal((await post({ ...body, entries })).status, 400); assert.equal(data.size, 0);
+  }
+  assert.equal((await post({ ...body, entries: [{ ...entry, note: 'x'.repeat(262144) }] })).status, 413); assert.equal(data.size, 0);
+});

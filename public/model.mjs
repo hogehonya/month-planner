@@ -86,3 +86,20 @@ export function effectiveEntry(date, raw, base = DEFAULT_BASE) {
   for (const slot of SLOTS) for (const field of ['title', 'content']) details[slot + '_' + field] = raw?.[slot + '_' + field] ?? '';
   return { entry_date: date, ...fields, ...details, last_editor: raw?.last_editor ?? '', updated_at: raw?.updated_at ?? '', overridden_fields: FIELDS.filter(field => raw && Object.hasOwn(raw, field)) };
 }
+
+export const IMPORT_FIELDS = ['slot1_title', 'slot1_content', 'slot2_title', 'slot2_content', 'note'];
+export function validateImport(value) {
+  object(value, ['entries'], '追加予定JSON');
+  if (!Array.isArray(value.entries) || value.entries.length < 1 || value.entries.length > 31) throw new Error('追加予定は1〜31日で指定してください。');
+  if (new TextEncoder().encode(JSON.stringify(value)).length > 262144) throw new Error('JSONは256KiB以内にしてください。');
+  const seen = new Set();
+  return value.entries.map(row => {
+    object(row, ['entry_date', ...IMPORT_FIELDS], '追加予定'); parseDate(row.entry_date);
+    if (seen.has(row.entry_date)) throw new Error('同じ日付を重複して指定できません。');
+    seen.add(row.entry_date);
+    const clean = { entry_date: row.entry_date };
+    for (const field of IMPORT_FIELDS) if (Object.hasOwn(row, field)) clean[field] = textLimit(row[field], field.endsWith('_title') ? SLOT_LIMITS.title : SLOT_LIMITS.content, field);
+    if (Object.keys(clean).length === 1) throw new Error('各日の更新項目を1つ以上指定してください。');
+    return clean;
+  });
+}
