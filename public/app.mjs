@@ -50,10 +50,11 @@ function buildMonth() {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'calendar-day';
     if (day === 0 || day === 6) button.classList.add('weekend');
     if (date === localDate()) { button.classList.add('is-today'); button.setAttribute('aria-current', 'date'); }
-    const number = document.createElement('span'), summary = document.createElement('span');
+    const dayHeading = document.createElement('span'), number = document.createElement('span'), timetable = document.createElement('span'), summary = document.createElement('span');
+    dayHeading.className = 'day-heading'; timetable.className = 'day-timetable';
     number.className = 'day-number'; number.textContent = Number(date.slice(-2)); summary.className = 'day-summary';
-    button.append(number, summary); button.setAttribute('aria-label', date); button.onclick = () => selectDay(date);
-    dayButtons.set(date, { button, summary }); $('calendar').append(button);
+    dayHeading.append(number, timetable); button.append(dayHeading, summary); button.setAttribute('aria-label', date); button.onclick = () => selectDay(date);
+    dayButtons.set(date, { button, timetable, summary }); $('calendar').append(button);
     const row = document.createElement('tr'); row.dataset.date = date; if (day === 0 || day === 6) row.classList.add('weekend'); if (date === localDate()) row.classList.add('is-today');
     const heading = document.createElement('th'); heading.scope = 'row'; heading.textContent = `${Number(date.slice(-2))}日（${'日月火水木金土'[day]}）`;
     if (date === localDate()) { const badge = document.createElement('span'); badge.className = 'today-badge'; badge.textContent = '今日'; heading.append(badge); }
@@ -103,10 +104,12 @@ async function save(cell) {
 function paintDay(row) {
   const day = dayButtons.get(row.entry_date);
   if (!day) return;
-  const parts = ['slot1', 'slot2'].map(field => row[field + '_title'] || row[field]).filter(Boolean);
+  const fixed = ['slot1', 'slot2'].map(field => row[field]).filter(Boolean);
+  const parts = ['slot1', 'slot2'].map(field => row[field + '_title']).filter(Boolean);
+  day.timetable.textContent = fixed.join(' / ');
   if (row.note) parts.push(row.note);
   day.summary.textContent = parts.join(' / ');
-  day.button.setAttribute('aria-label', `${row.entry_date} ${parts.join(' / ') || '予定なし'}`);
+  day.button.setAttribute('aria-label', `${row.entry_date} ${[...fixed, ...parts].join(' / ') || '予定なし'}`);
 }
 function paint(data) {
   base = data.base;

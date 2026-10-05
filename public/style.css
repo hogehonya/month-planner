@@ -43,3 +43,6 @@ dialog::backdrop{background:#0008}.dialog-header{display:flex;align-items:start;
 .day-number{display:inline-block;min-width:26px;text-align:center;font-weight:600}.day-summary{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:13px;line-height:1.4;margin-top:4px}
 .detail-title{margin-top:24px}.table-wrap{margin-top:12px}
 @media(max-width:600px){main{padding:20px 6px}.calendar-day{height:100px;padding:4px 2px}.day-summary{font-size:11px;-webkit-line-clamp:4}.day-number{min-width:24px}.weekdays span{font-size:13px}.calendar{width:100%}.table-wrap tbody tr{margin-bottom:0}.detail-title{font-size:18px}}
+
+.day-heading{display:flex;align-items:center;gap:3px;min-width:0;white-space:nowrap}.day-heading .day-number{flex-shrink:0}.day-timetable{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:1.4}
+@media(max-width:600px){.day-heading{gap:2px}.day-timetable{font-size:11px}}
