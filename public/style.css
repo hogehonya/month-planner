@@ -37,7 +37,7 @@ dialog::backdrop{background:#0008}.dialog-header{display:flex;align-items:start;
 .weekdays span{text-align:center;font-weight:600;padding:8px 0;color:var(--muted)}
 .calendar{border-top:1px solid var(--line);border-left:1px solid var(--line);background:var(--surface)}
 .calendar>span{border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--bg)}
-.calendar-day{min-width:0;width:100%;height:112px;padding:6px;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);border-radius:0;text-align:left;color:var(--text);font-weight:400;overflow:hidden}
+.calendar-day{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;min-width:0;width:100%;height:112px;padding:6px;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);border-radius:0;text-align:left;color:var(--text);font-weight:400;overflow:hidden}
 .calendar-day.weekend{background:var(--weekend)}.calendar-day[aria-pressed=true]{box-shadow:inset 0 0 0 3px var(--primary);background:var(--tint)}
 .calendar-day.is-today .day-number{background:var(--primary);color:var(--surface);border-radius:50%}
 .day-number{display:inline-block;min-width:26px;text-align:center;font-weight:600}.day-summary{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:13px;line-height:1.4;margin-top:4px}
