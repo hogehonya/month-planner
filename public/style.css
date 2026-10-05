@@ -30,3 +30,16 @@ dialog{width:min(calc(100vw - 24px),640px);max-height:calc(100dvh - 24px);overfl
 dialog::backdrop{background:#0008}.dialog-header{display:flex;align-items:start;justify-content:space-between;gap:12px;margin-bottom:16px}.dialog-header h2{min-width:0;overflow-wrap:anywhere}.dialog-header button{flex-shrink:0}
 #slot-form label{margin:16px 0}.hint{font-size:14px;font-weight:400;color:var(--muted)}#dialog-auth{padding:12px;border:1px solid var(--line);border-radius:6px}#dialog-message,#dialog-auth-message{overflow-wrap:anywhere}
 @media(max-width:600px){dialog{padding:16px}.dialog-header{flex-wrap:wrap}.dialog-header h2{width:100%}}
+
+/* Calendar overview stays seven columns on every screen; details remain below. */
+.view-switch{display:flex;gap:8px;margin-top:24px}.view-switch button[aria-pressed=true]{background:var(--primary);color:var(--surface)}
+.weekdays,.calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:0}
+.weekdays span{text-align:center;font-weight:600;padding:8px 0;color:var(--muted)}
+.calendar{border-top:1px solid var(--line);border-left:1px solid var(--line);background:var(--surface)}
+.calendar>span{border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--bg)}
+.calendar-day{min-width:0;width:100%;height:112px;padding:6px;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);border-radius:0;text-align:left;color:var(--text);font-weight:400;overflow:hidden}
+.calendar-day.weekend{background:var(--weekend)}.calendar-day[aria-pressed=true]{box-shadow:inset 0 0 0 3px var(--primary);background:var(--tint)}
+.calendar-day.is-today .day-number{background:var(--primary);color:var(--surface);border-radius:50%}
+.day-number{display:inline-block;min-width:26px;text-align:center;font-weight:600}.day-summary{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;font-size:13px;line-height:1.4;margin-top:4px}
+.detail-title{margin-top:24px}.table-wrap{margin-top:12px}
+@media(max-width:600px){main{padding:20px 6px}.calendar-day{height:100px;padding:4px 2px}.day-summary{font-size:11px;-webkit-line-clamp:4}.day-number{min-width:24px}.weekdays span{font-size:13px}.calendar{width:100%}.table-wrap tbody tr{margin-bottom:0}.detail-title{font-size:18px}}
