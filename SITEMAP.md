@@ -11,7 +11,7 @@
 | `/base.example.json` | 時間割JSONの雛形 |
 | `/.netlify/functions/planner` | 予定・設定・履歴の取得、PIN検証、保存 |
 
-`public/index.html`、`style.css`、`app.mjs` が画面、`public/help.mjs` が取説ビューの切替、`public/model.mjs` が共通検証、`netlify/functions/planner.mjs` がAPIです。設計判断とデータ形式の正本は `DESIGN.md`、公開手順は `README.md` です。
+`public/index.html`、`style.css`、`app.mjs` が画面、`public/help.mjs` が取説ビューの切替、`public/font-size.mjs` が文字サイズ設定、`public/model.mjs` が共通検証、`netlify/functions/planner.mjs` がAPIです。設計判断とデータ形式の正本は `DESIGN.md`、公開手順は `README.md` です。
 
 後回しにする同時更新の検証は `docs/concurrency-issue.md` に記録しています。
 
