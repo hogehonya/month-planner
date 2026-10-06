@@ -206,3 +206,19 @@ test('コメント取得は選択日だけ1回一覧取得し、範囲外の日�
   assert.equal((await get('2026-11-01')).status, 400);
   assert.equal((await get('not-a-date')).status, 400);
 });
+
+
+test('月間全週の56日GETは隣接月の保存値・時間割・コメントを返し57日は拒否する', async () => {
+  const { handler, post, data } = setup();
+  data.set('settings/base.json', { data: { base: { ...DEFAULT_BASE, dates: { '2026-07-19': { slot1: '隣接月の時間割' } } } }, etag: 'base' });
+  assert.equal((await post({ action: 'save', editor_name: '編集者', entry_date: '2026-09-12', field: 'note', value: '隣接月の予定' })).status, 200);
+  const read = end => handler(new Request(`https://planner.example/.netlify/functions/planner?start=2026-07-19&end=${end}&comment_date=2026-09-12`));
+  const response = await read('2026-09-12');
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.entries.length, 56);
+  assert.equal(body.entries[0].slot1, '隣接月の時間割');
+  assert.equal(body.entries.at(-1).note, '隣接月の予定');
+  assert.deepEqual(body.entries.at(-1).comments, []);
+  assert.equal((await read('2026-09-13')).status, 400);
+});

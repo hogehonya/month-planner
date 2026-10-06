@@ -16,10 +16,10 @@ export function parseDate(value) {
   return date;
 }
 
-export function dateRange(start, end) {
+export function dateRange(start, end, maxDays = 31) {
   const first = parseDate(start), last = parseDate(end);
   const count = Math.round((last - first) / 86400000) + 1;
-  if (count < 1 || count > 31) throw new Error('期間は1〜31日で指定してください。');
+  if (count < 1 || count > maxDays) throw new Error(`期間は1〜${maxDays}日で指定してください。`);
   return Array.from({ length: count }, (_, i) => new Date(first.getTime() + i * 86400000).toISOString().slice(0, 10));
 }
 
@@ -116,4 +116,28 @@ export function calendarWeeks(dates) {
 export function calendarWeekWindows(dates) {
   const weeks = calendarWeeks(dates);
   return weeks.map((week, index) => [...week, ...(weeks[index + 1] ?? [])]);
+}
+
+// The preceding week is selectable; the following week completes the last two-week window.
+export function monthCalendarRange(month) {
+  const days = monthRange(month);
+  const start = shiftDate(days[0], -parseDate(days[0]).getUTCDay() - 7);
+  const end = shiftDate(days.at(-1), 6 - parseDate(days.at(-1)).getUTCDay() + 7);
+  return dateRange(start, end, 56);
+}
+
+export function monthWeekWindows(month) {
+  const weeks = calendarWeeks(monthCalendarRange(month));
+  const labels = weeks.map(week => {
+    // A boundary week belongs to the month containing its Saturday (and the 1st).
+    const labelMonth = week.at(-1).slice(0, 7);
+    const first = labelMonth + '-01';
+    const firstSunday = shiftDate(first, -parseDate(first).getUTCDay());
+    const number = Math.round((parseDate(week[0]) - parseDate(firstSunday)) / 604800000) + 1;
+    return `${Number(labelMonth.slice(-2))}月${number}週`;
+  });
+  return weeks.slice(0, -1).map((week, index) => ({
+    label: `${labels[index]}/${labels[index + 1]}`,
+    dates: [...week, ...weeks[index + 1]],
+  }));
 }

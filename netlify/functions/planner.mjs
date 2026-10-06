@@ -73,7 +73,7 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'sh
       const url = new URL(request.url);
       if (request.method === 'GET') {
         let dates;
-        try { dates = dateRange(url.searchParams.get('start'), url.searchParams.get('end')); }
+        try { dates = dateRange(url.searchParams.get('start'), url.searchParams.get('end'), 56); }
         catch (e) { throw error(400, e.message); }
         const commentDate = url.searchParams.get('comment_date');
         if (commentDate !== null && !dates.includes(commentDate)) throw error(400, 'コメントの日付は表示期間内で指定してください。');
