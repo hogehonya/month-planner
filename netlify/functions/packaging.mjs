@@ -1,6 +1,6 @@
 import { getStore } from '@netlify/blobs';
 import { randomUUID } from 'node:crypto';
-import { ITEMS, PHOTO_LIMIT, validateSKU } from '../../public/packaging-model.mjs';
+import { ITEMS, PHOTO_LIMIT, validateSKU, validateSheet } from '../../public/packaging-model.mjs';
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 async function readBody(request) {
@@ -40,12 +40,25 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'pa
         }
         const { blobs } = await store.list({ prefix: 'skus/' });
         const skus = (await Promise.all(blobs.map(async ({ key }) => { const row = await store.getWithMetadata(key, { type: 'json' }); return row ? { ...row.data, etag: row.etag } : null; }))).filter(Boolean);
-        return json({ items: ITEMS, skus });
+        const sheetKeys = await store.list({prefix:'menu-sheets/'});
+        const sheets = (await Promise.all(sheetKeys.blobs.map(async ({key})=> { const saved = await store.getWithMetadata(key,{type:'json'}); return saved ? {...saved.data,etag:saved.etag} : null; }))).filter(Boolean).sort((a,b)=>a.date.localeCompare(b.date));
+        return json({ items: ITEMS, skus, sheets });
       }
       if (request.method !== 'POST') throw fail(405, 'GETまたはPOSTを使用してください。');
       if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) throw fail(403, 'このページから操作してください。');
       if (request.headers.get('Content-Type')?.split(';')[0].trim() !== 'application/json') throw fail(415, 'application/jsonを指定してください。');
       const body = await readBody(request);
+      if (body.action === 'save_sheet') {
+        let sheet; try { sheet = validateSheet(body); } catch(e) { throw fail(400,e.message); }
+        const store = openStore(), key = `menu-sheets/${sheet.date}.json`;
+        const references = await Promise.all(sheet.rows.map(row=>store.getWithMetadata(`skus/${row.item_id}/${row.sku_id}.json`,{type:'json'})));
+        if (references.some(saved=>!saved)) throw fail(400,'登録済みのSKUを選んでください。');
+        const current = await store.getWithMetadata(key,{type:'json'});
+        if (current && (!current.etag || body.etag !== current.etag) || !current && body.etag != null) throw fail(409,'おしながきが変更されました。最新状態を確認して保存をやり直してください。');
+        const result = await store.setJSON(key,sheet,current ? {onlyIfMatch:current.etag} : {onlyIfNew:true});
+        if (!result.modified) throw fail(409,'おしながきの更新が重なりました。最新状態を確認してください。');
+        return json({ok:true,sheet:{...sheet,etag:result.etag}});
+      }
       if (body.action !== 'save_sku') throw fail(400, '操作を確認してください。');
       let row; try { row = validateSKU(body); } catch (e) { throw fail(400, e.message); }
       const photo = body.photo == null ? null : photoData(body.photo);

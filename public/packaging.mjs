@@ -1,13 +1,15 @@
 import { PHOTO_LIMIT } from './packaging-model.mjs';
+import { setupMenu } from './menu-sheet.mjs';
 const $ = id => document.getElementById(id), endpoint = '/.netlify/functions/packaging';
 let data = { items: [], skus: [] }, editing = null, busy = false;
 function node(tag, text) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; }
 async function api(body) {
   const response = await fetch(endpoint, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || '通信に失敗しました。');
+  if (!response.ok) throw Object.assign(new Error(result.error || '通信に失敗しました。'),{status:response.status});
   return result;
 }
+const menu = setupMenu(document,api);
 function render() {
   const selected = $('filter').value;
   $('items').replaceChildren();
@@ -33,7 +35,7 @@ function render() {
   }
 }
 async function load() {
-  try { const next = await api(); data = next; const value = $('filter').value; $('filter').replaceChildren(new Option('全品目',''),...data.items.map(item=>new Option(item.name,item.id))); $('filter').value = value; render(); $('status').textContent = '読み込みました。'; }
+  try { const next = await api(); data = next; menu.receive(next); const value = $('filter').value; $('filter').replaceChildren(new Option('全品目',''),...data.items.map(item=>new Option(item.name,item.id))); $('filter').value = value; render(); $('status').textContent = '読み込みました。'; }
   catch(e) { $('status').textContent = e.message; }
 }
 function setCultivation(method) {
@@ -50,7 +52,7 @@ function open(item,sku = null) {
   setCultivation(sku?.cultivation_method ?? 'unknown'); $('sku-price').value = sku?.price_yen ?? ''; $('sku-condition').value = sku?.packaging_condition ?? '';
   $('sku-title').textContent = `${item.name}のSKU${sku ? '編集' : '追加'}`; $('form-status').textContent = ''; $('sku-dialog').showModal();
 }
-$('filter').addEventListener('change',render); $('reload').addEventListener('click',load);
+$('filter').addEventListener('change',render); $('reload').addEventListener('click',()=> { if (menu.canLeave()) return load(); });
 $('cancel').addEventListener('click',()=> { if (!busy) $('sku-dialog').close(); });
 $('sku-dialog').addEventListener('cancel',event=> { if (busy) event.preventDefault(); });
 $('sku-form').addEventListener('submit',async event=> {

@@ -20,7 +20,7 @@ async function setup(skus = [], saveError = null) {
   const elements = new Map();
   const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
   const requests = [];
-  const source = (await readFile(new URL('../public/packaging.mjs', import.meta.url), 'utf8')).replace("import { PHOTO_LIMIT } from './packaging-model.mjs';", 'const PHOTO_LIMIT = 3145728;');
+  const source = (await readFile(new URL('../public/packaging.mjs', import.meta.url), 'utf8')).replace("import { PHOTO_LIMIT } from './packaging-model.mjs';", 'const PHOTO_LIMIT = 3145728;').replace("import { setupMenu } from './menu-sheet.mjs';", 'const setupMenu = ()=>({receive(){},canLeave(){return true;}});');
   const context = vm.createContext({ document: { getElementById: get, createElement: () => new Element() }, Option: class extends Element { constructor(name, value) { super(); this.textContent = name; this.value = value; } }, fetch: async (_url, options) => {
     if (options?.method) { requests.push(JSON.parse(options.body)); return {ok:!saveError,json:async()=>saveError ? {error:saveError} : {ok:true}}; }
     return {ok:true,json:async()=>({items:[{id:'item-01',name:'大根'}],skus})};
