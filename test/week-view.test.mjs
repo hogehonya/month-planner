@@ -38,7 +38,9 @@ test('月間へ戻ると月初からの週番号を復元し、翌週の日付�
   const app = load('month', range);
   app.context.buildWeeks();
   assert.equal(app.picker.hidden, false);
-  assert.deepEqual(app.picker.children.map(button => button.textContent), monthWeekWindows('2026-08').map(window => window.label));
+  assert.deepEqual(app.picker.children.map(button => button.textContent), ['7月4週', '1週', '2週', '3週', '4週', '5週', '6週']);
+  assert.equal(app.picker.children[0].attributes['aria-label'], '7月4週/8月1週 2026-07-19 〜 2026-08-01');
+  assert.equal(app.picker.children[1].attributes['aria-label'], '8月1週/8月2週 2026-07-26 〜 2026-08-08');
   app.picker.children[0].onclick();
   app.context.showWeek('2026-07-30');
   assert.deepEqual(app.visible(), range.slice(0, 14));

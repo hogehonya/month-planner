@@ -313,9 +313,9 @@ function buildWeeks() {
   $('week-picker').replaceChildren();
   $('week-picker').hidden = view !== 'month';
   if (view !== 'month') return;
-  monthWeekWindows(month).forEach(({ dates: week, label }) => {
+  monthWeekWindows(month).forEach(({ dates: week, label }, index) => {
     const button = document.createElement('button'); button.type = 'button';
-    button.textContent = label; button.dataset.start = week[0];
+    button.textContent = index === 0 ? label.split('/')[0] : `${index}週`; button.dataset.start = week[0];
     button.setAttribute('aria-label', `${label} ${week[0]} 〜 ${week.at(-1)}`);
     button.onclick = () => selectDay(week[0], false, week[0]); $('week-picker').append(button);
   });
