@@ -9,6 +9,7 @@ class Element {
   replaceChildren(...children){this.children=children;}
   addEventListener(name,fn){this.listeners[name]=fn;}
   setCustomValidity(value){this.validation=value;}
+  reportValidity(){return !this.validation && this.children.every(child=>child.reportValidity());}
 }
 function setup(failure=null) {
   const elements = new Map(), requests=[];
@@ -22,6 +23,7 @@ function setup(failure=null) {
     const sheet={date:body.date,rows:body.rows,etag:'v2'};
     sheets=[...sheets.filter(s=>s.date!==body.date),sheet];return {ok:true,sheet};
   };
+  get('menu-form').append(get('menu-rows'));
   const menu=setupMenu({getElementById:get,createElement:tag=>new Element(tag)},api);
   const source={items:[],skus:[{item_id:'item-14',id:'real-001',name:'大根',price_yen:100},{item_id:'item-01',id:'sample',name:'サンプル',price_yen:200}],sheets};
   menu.receive(source);
@@ -74,4 +76,26 @@ test('数量編集で完了状態・小計を表示、失敗・日付切替・�
   ui.setFailure(null);await ui.get('menu-form').listeners.submit(submit());
   assert.equal(ui.requests.at(-1).rows[0].prepared_quantity,12);
   assert.match(ui.get('menu-status').textContent,/保存しました/);assert.equal(ui.menu.canLeave(),true);
+});
+
+
+test('無効な数量を入力中のSKU追加を拒否し、値と検証エラーを保持する',()=> {
+  const ui=setup(), planned=input(ui,1);
+  planned.value='1.5'; planned.listeners.input();
+  assert.ok(planned.validation);
+  ui.get('menu-sku').value='item-01/sample'; ui.get('menu-add-sku').listeners.submit(submit());
+  assert.equal(ui.get('menu-rows').children.length,1);
+  assert.equal(input(ui,1),planned); assert.equal(planned.value,'1.5'); assert.ok(planned.validation);
+  assert.equal(ui.requests.length,0);
+  planned.value='11';planned.listeners.input();
+  ui.get('menu-add-sku').listeners.submit(submit());
+  assert.equal(ui.get('menu-rows').children.length,2);
+  assert.equal(input(ui,1).value,'11');
+});
+
+test('全件未入力の数量・金額は0合計と表示しない',()=> {
+  const ui=setup();
+  assert.equal(ui.get('menu-summary').children[1].textContent,'準備数: 未入力（1件）');
+  assert.equal(ui.get('menu-summary').children[3].textContent,'準備済み売価: 未入力（1件）');
+  assert.match(ui.get('menu-summary').children[0].textContent,/10/);
 });

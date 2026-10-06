@@ -21,6 +21,7 @@ export function setupMenu(document,api) {
     const totals = summarizeSheet(rows);
     for (const [key,label,unit] of [['planned_quantity','予定数',''],['prepared_quantity','準備数',''],['planned_amount','予定売価','円'],['prepared_amount','準備済み売価','円']]) {
       const value = totals[key];
+      if (rows.length && value.unknown === rows.length) { $('menu-summary').append(node('p',`${label}: 未入力（${value.unknown}件）`)); continue; }
       $('menu-summary').append(node('p',`${label}${value.unknown ? '（既知分小計）' : '合計'}: ${format(value.total)}${unit}${value.unknown ? ` ／未入力 ${value.unknown}件` : ''}`));
     }
   }
@@ -87,6 +88,7 @@ export function setupMenu(document,api) {
   });
   $('menu-add-sku').addEventListener('submit',event=> {
     event.preventDefault(); if (!selected || busy) return;
+    if (!$('menu-form').reportValidity()) { status('単価・数量の入力を確認してください。入力は保持しています。'); return; }
     const sku = source.skus.find(sku=>`${sku.item_id}/${sku.id}` === $('menu-sku').value); if (!sku) return;
     if (rows.some(row=>row.item_id === sku.item_id && row.sku_id === sku.id)) { status('このSKUは追加済みです。'); return; }
     rows.push({item_id:sku.item_id,sku_id:sku.id,price_yen:sku.price_yen ?? null,planned_quantity:null,prepared_quantity:null}); dirty = true; renderRows(); status('SKUを追加しました。おしながきを保存してください。');
