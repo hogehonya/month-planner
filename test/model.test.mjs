@@ -87,3 +87,17 @@ test('6週ある月でも週の日付を失わない', async () => {
   assert.equal(calendarWeeks(month).length, 6);
   assert.deepEqual(calendarWeeks(month).flat(), month);
 });
+
+
+test('週番号からその週と次週を表示し、月初・月末と6週の月の日付を保つ', async () => {
+  const { calendarWeekWindows } = await import('../public/model.mjs');
+  for (const [month, lengths] of [['2026-02', [14, 14, 14, 7]], ['2026-10', [10, 14, 14, 14, 7]], ['2026-08', [8, 14, 14, 14, 9, 2]]]) {
+    const dates = monthRange(month), windows = calendarWeekWindows(dates);
+    assert.deepEqual(windows.map(window => window.length), lengths);
+    assert.deepEqual([...new Set(windows.flat())], dates);
+    assert.equal(windows[0][0], dates[0]);
+    assert.equal(windows.at(-1).at(-1), dates.at(-1));
+  }
+  const dates = fortnightRange('2027-01-01');
+  assert.deepEqual(calendarWeekWindows(dates), [dates, dates.slice(7)]);
+});

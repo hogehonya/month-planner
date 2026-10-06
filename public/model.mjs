@@ -112,3 +112,8 @@ export function calendarWeeks(dates) {
   }
   return weeks;
 }
+
+export function calendarWeekWindows(dates) {
+  const weeks = calendarWeeks(dates);
+  return weeks.map((week, index) => [...week, ...(weeks[index + 1] ?? [])]);
+}
