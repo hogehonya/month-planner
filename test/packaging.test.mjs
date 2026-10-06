@@ -10,9 +10,9 @@ function setup() {
     async set(key,value,{metadata}) { data.set(key,{data:value,metadata}); },
     async setJSON(key,value,options) { const old = data.get(key); if (options.onlyIfNew && old || options.onlyIfMatch && old?.etag !== options.onlyIfMatch) return {modified:false}; data.set(key,{data:value,etag:String(++version)}); return {modified:true}; }
   };
-  const handler = createHandler({getStore:()=>store,getPin:()=> 'test-only',sleep:async()=>{}});
+  const handler = createHandler({getStore:()=>store});
   const get = query => handler(new Request('https://planner.example/.netlify/functions/packaging'+(query ?? '')));
-  const post = body => handler(new Request('https://planner.example/.netlify/functions/packaging',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:'test-only',action:'save_sku',item_id:'item-14',id:'real-001',name:'実際のSKU',type:'',note:'包装の備考',...body})}));
+  const post = body => handler(new Request('https://planner.example/.netlify/functions/packaging',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_sku',item_id:'item-14',id:'real-001',name:'実際のSKU',type:'',note:'包装の備考',...body})}));
   return {data,store,get,post,handler};
 }
 test('公開20品目と空のSKU、架空の品種・写真なし',async()=> {
@@ -20,14 +20,11 @@ test('公開20品目と空のSKU、架空の品種・写真なし',async()=> {
   assert.deepEqual(view.items,ITEMS); assert.equal(view.items.length,20); assert.deepEqual(view.skus,[]);
   assert.deepEqual(view.items.map(x=>x.name),['タマネギ','ニンニク','ネギ','カボチャ','ジャガイモ','サツマイモ','サトイモ','ラッカセイ','ミニチンゲンサイ','ハクサイ','シュンギク','ホウレンソウ','コマツナ','ダイコン','カブ','ニンジン','ビーツ','インゲン','レタス','ブロッコリー']);
 });
-test('PIN必須・未設定拒否・入力検証・予定のキーに書き込まない',async()=> {
+test('PINなしで保存・入力検証・予定のキーに書き込まない',async()=> {
   const {post,data,handler} = setup();
-  assert.equal((await post({pin:'wrong'})).status,401);
   for (const patch of [{item_id:'unknown'},{id:'../bad'},{name:''},{type:'x'.repeat(121)},{note:'x'.repeat(3001)}]) assert.equal((await post(patch)).status,400);
   assert.equal(data.size,0);
   assert.equal((await post({})).status,200); assert.ok([...data.keys()].every(key=>key.startsWith('skus/')));
-  const noPin = createHandler({getPin:()=>''});
-  assert.equal((await noPin(new Request('https://planner.example/',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}))).status,503);
   assert.equal((await handler(new Request('https://planner.example/',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://other.example'},body:'{}'}))).status,403);
 });
 test('SKUごとの写真保存・公開配信・再編集保持と別SKUの独立',async()=> {
