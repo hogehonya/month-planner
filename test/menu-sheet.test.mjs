@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { summarizeSheet, validateSheet } from '../public/packaging-model.mjs';
-import { setupMenu } from '../public/menu-sheet.mjs';
+import { setupMenu, visibleMenuRows } from '../public/menu-sheet.mjs';
 const row = {item_id:'item-14',sku_id:'real-001',price_yen:100,planned_quantity:10,prepared_quantity:null};
 class Element {
   constructor(tag='') {this.tag=tag;this.children=[];this.listeners={};this.value='';}
-  append(...children){this.children.push(...children);}
+  append(...children){for(const child of children){this.children=this.children.filter(existing=>existing!==child);this.children.push(child);}}
+  setAttribute(name,value){this[name]=value;}
   replaceChildren(...children){this.children=children;}
   addEventListener(name,fn){this.listeners[name]=fn;}
   setCustomValidity(value){this.validation=value;}
@@ -103,7 +104,7 @@ test('全件未入力の数量・金額は0合計と表示しない',()=> {
 
 test('おしながきに対応SKUの写真を表示し、未登録から編集できる',()=> {
   const ui=setup(), card=ui.get('menu-rows').children[0];
-  assert.match(card.children[0].textContent,/ダイコン/);
+  assert.equal(card.children.find(child=>child.className==='menu-card-tags').children[0].textContent,'ダイコン');
   const media=card.children.find(child=>child.className==='menu-row-photo');
   assert.equal(media.children[0].textContent,'写真未登録');
   media.children[1].listeners.click();
@@ -130,4 +131,45 @@ test('写真更新は未保存の単価・数量原文と不正値を保持し�
   assert.equal(ui.requests[0].rows[0].price_yen,150);
   assert.equal(ui.requests[0].rows[0].prepared_quantity,12);
   assert.equal(ui.requests[0].etag,'v1');
+});
+
+test('タグは同群OR・群間AND、価格両端と未定を区別し、数値nullは常に末尾',()=> {
+  const skus=[{item_id:'item-01',id:'a',cultivation_method:'organic'},{item_id:'item-14',id:'b',cultivation_method:'conventional'},{item_id:'item-14',id:'c',cultivation_method:'unknown'}];
+  const rows=[{...row,item_id:'item-01',sku_id:'a',price_yen:200},{...row,sku_id:'b',price_yen:500},{...row,sku_id:'c',price_yen:null},{...row,item_id:'item-01',sku_id:'a2',price_yen:199}];
+  const filters={item:new Set(['item-01','item-14']),cultivation:new Set(['organic','conventional']),price:new Set(['range'])};
+  assert.deepEqual(visibleMenuRows(rows,skus,[],filters,'registered').map(row=>row.sku_id),['a','b']);
+  filters.cultivation.clear();filters.price.add('unknown');
+  assert.deepEqual(visibleMenuRows(rows,skus,[],filters,'price-desc').map(row=>row.sku_id),['b','a','c']);
+  filters.price.clear();
+  assert.deepEqual(visibleMenuRows(rows,skus,[],filters,'price-asc').map(row=>row.sku_id),['a2','a','b','c']);
+  assert.deepEqual(visibleMenuRows(rows.map(row=>({...row,price_yen:300})),skus,[],filters,'price-desc').map(row=>row.sku_id),['a','b','c','a2']);
+});
+
+test('絞り込み・ソートは無効入力と数量原文を保持し、非表示行も元順で保存する',async()=> {
+  const ui=setup();
+  const other={...row,item_id:'item-01',sku_id:'sample',price_yen:500,planned_quantity:null};
+  const source={...ui.source,items:[...ui.source.items,{id:'item-01',name:'タマネギ'}],sheets:[{date:'2026-10-17',rows:[{...row,price_yen:200},other],etag:'v1'}]};
+  ui.menu.receive(source);
+  const first=ui.get('menu-rows').children[0], planned=first.children[2].children[1].children[0], price=first.children[2].children[0].children[0];
+  planned.value='1.5';planned.listeners.input();price.value='00200';price.listeners.input();
+  const tag=ui.get('menu-item-tags').children.find(button=>button.textContent==='タマネギ');tag.listeners.click();
+  assert.equal(first.hidden,true);assert.equal(planned.value,'1.5');assert.ok(planned.validation);assert.equal(price.value,'00200');
+  ui.get('menu-sort').value='price-desc';ui.get('menu-sort').listeners.change();
+  assert.equal(first.children[2].children[1].children[0],planned);
+  ui.get('menu-clear-filters').listeners.click();assert.equal(first.hidden,false);
+  planned.value='11';planned.listeners.input();
+  const range=ui.get('menu-price-tags').children.find(button=>button.textContent==='200〜500円');range.listeners.click();
+  price.value='00600';price.listeners.input();assert.equal(first.hidden,false);
+  ui.get('menu-reapply').listeners.click();assert.equal(first.hidden,true);assert.equal(price.value,'00600');
+  await ui.get('menu-form').listeners.submit(submit());
+  assert.equal(ui.requests[0].rows.length,2);
+  assert.equal(ui.requests[0].rows[0].sku_id,'real-001');assert.equal(ui.requests[0].rows[0].price_yen,600);
+  assert.equal(ui.requests[0].rows[1].sku_id,'sample');
+});
+
+test('品目ソートは日本語名・同値元順を使い、予定数nullは末尾',()=> {
+  const filters={item:new Set(),cultivation:new Set(),price:new Set()};
+  const rows=[{...row,sku_id:'a',item_id:'item-01',planned_quantity:null},{...row,sku_id:'b',planned_quantity:20},{...row,sku_id:'c',planned_quantity:20}];
+  assert.deepEqual(visibleMenuRows(rows,[],[{id:'item-01',name:'タマネギ'},{id:'item-14',name:'ダイコン'}],filters,'item').map(row=>row.sku_id),['b','c','a']);
+  assert.deepEqual(visibleMenuRows(rows,[],[],filters,'planned-desc').map(row=>row.sku_id),['b','c','a']);
 });
