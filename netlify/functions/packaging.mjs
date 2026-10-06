@@ -1,10 +1,8 @@
 import { getStore } from '@netlify/blobs';
-import { createHash, timingSafeEqual, randomUUID } from 'node:crypto';
-import { setTimeout as delay } from 'node:timers/promises';
+import { randomUUID } from 'node:crypto';
 import { ITEMS, PHOTO_LIMIT, validateSKU } from '../../public/packaging-model.mjs';
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
-const digest = value => createHash('sha256').update(value).digest();
 async function readBody(request) {
   const reader = request.body?.getReader();
   if (!reader) throw fail(400, '入力を確認してください。');
@@ -28,7 +26,7 @@ function photoData(photo) {
   if (!valid) throw fail(415, 'JPEG・PNG・WebPの写真を選んでください。');
   return data;
 }
-export function createHandler({ getStore: openStore = () => getStore({ name: 'packaging-master', consistency: 'strong' }), getPin = () => process.env.EDIT_PIN, sleep = delay } = {}) {
+export function createHandler({ getStore: openStore = () => getStore({ name: 'packaging-master', consistency: 'strong' }) } = {}) {
   return async request => {
     try {
       const url = new URL(request.url);
@@ -47,10 +45,7 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'pa
       if (request.method !== 'POST') throw fail(405, 'GETまたはPOSTを使用してください。');
       if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) throw fail(403, 'このページから操作してください。');
       if (request.headers.get('Content-Type')?.split(';')[0].trim() !== 'application/json') throw fail(415, 'application/jsonを指定してください。');
-      const body = await readBody(request), pin = getPin();
-      if (typeof pin !== 'string' || !pin) throw fail(503, '編集用PINが設定されていません。');
-      if (typeof body.pin !== 'string' || !timingSafeEqual(digest(body.pin), digest(pin))) { await sleep(300); throw fail(401, 'PINを確認してください。'); }
-      if (body.action === 'verify') return json({ ok: true });
+      const body = await readBody(request);
       if (body.action !== 'save_sku') throw fail(400, '操作を確認してください。');
       let row; try { row = validateSKU(body); } catch (e) { throw fail(400, e.message); }
       const photo = body.photo == null ? null : photoData(body.photo);

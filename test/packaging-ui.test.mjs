@@ -13,47 +13,52 @@ class Element {
   focus() { this.focused = true; }
   reset() {}
   showModal() { this.modalOpen = true; }
+  close() { this.modalOpen = false; }
 }
 
-async function setup() {
+async function setup(skus = []) {
   const elements = new Map();
   const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
-  let rejectPin = true;
+  const requests = [];
   const source = (await readFile(new URL('../public/packaging.mjs', import.meta.url), 'utf8')).replace("import { PHOTO_LIMIT } from './packaging-model.mjs';", 'const PHOTO_LIMIT = 3145728;');
-  const context = vm.createContext({ document: { getElementById: get, createElement: () => new Element() }, Option: class extends Element { constructor(name, value) { super(); this.textContent = name; this.value = value; } }, fetch: async (_url, options) => options?.method ? { ok: !rejectPin, status: rejectPin ? 401 : 200, json: async () => rejectPin ? {error:'PINが違います。'} : {} } : { ok:true, json:async()=>({items:[{id:'item-01',name:'大根'}],skus:[]}) } });
+  const context = vm.createContext({ document: { getElementById: get, createElement: () => new Element() }, Option: class extends Element { constructor(name, value) { super(); this.textContent = name; this.value = value; } }, fetch: async (_url, options) => {
+    if (options?.method) { requests.push(JSON.parse(options.body)); return {ok:true,json:async()=>({ok:true})}; }
+    return {ok:true,json:async()=>({items:[{id:'item-01',name:'大根'}],skus})};
+  } });
   vm.runInContext(source, context);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(get('status').textContent, '読み込みました。');
-  return { get, acceptPin() { rejectPin = false; } };
+  return { get, requests, elements };
 }
 
-test('認証前の品目カードから登録し、PIN失敗後も選択品目を保持してフォームへ進む', async () => {
+test('品目カードからPINなしで登録フォームを直接開き、選択品目に保存する', async () => {
   const ui = await setup();
-  const card = ui.get('items').children[0];
-  const button = card.children.find(child => child.className === 'register-sku');
+  const button = ui.get('items').children[0].children.find(child => child.className === 'register-sku');
   assert.equal(button.textContent, 'この品目にSKU・写真を登録');
   button.listeners.click();
-  assert.equal(ui.get('auth').hidden, false);
-  assert.match(ui.get('auth-context').textContent, /大根/);
-  assert.equal(ui.get('pin').focused, true);
-  ui.get('pin').value = 'wrong';
-  await ui.get('auth').listeners.submit({preventDefault(){}});
-  assert.equal(ui.get('sku-dialog').modalOpen, undefined);
-  ui.acceptPin();
-  ui.get('pin').value = 'correct';
-  await ui.get('auth').listeners.submit({preventDefault(){}});
   assert.equal(ui.get('sku-dialog').modalOpen, true);
   assert.equal(ui.get('item-name').value, '大根');
   assert.equal(ui.get('sku-id').value, '');
-  assert.equal(ui.get('pin').value, '');
+  ui.get('sku-id').value = 'daikon-001';
+  ui.get('sku-name').value = '大根の袋';
+  ui.get('photo').files = [];
+  await ui.get('sku-form').listeners.submit({preventDefault(){}});
+  assert.equal(ui.requests.length, 1);
+  assert.equal(ui.requests[0].action, 'save_sku');
+  assert.equal(ui.requests[0].item_id, 'item-01');
+  assert.equal(ui.requests[0].id, 'daikon-001');
+  assert.equal(Object.hasOwn(ui.requests[0], 'pin'), false);
+  assert.equal(ui.elements.has('auth'), false);
 });
 
-test('認証済みの品目カードは直接登録フォームを開く', async () => {
-  const ui = await setup();
-  ui.acceptPin();
-  ui.get('pin').value = 'correct';
-  await ui.get('auth').listeners.submit({preventDefault(){}});
-  ui.get('items').children[0].children.find(child => child.className === 'register-sku').listeners.click();
+test('既存SKUの編集もPINなしで開き、IDと商品情報を保持する', async () => {
+  const ui = await setup([{item_id:'item-01',id:'existing-001',name:'既存商品',type:'確認済み品種',note:'備考',etag:'v1'}]);
+  const skuCard = ui.get('items').children[0].children.find(child => child.className === 'sku-card');
+  skuCard.children.find(child => child.textContent === 'SKUを編集').listeners.click();
   assert.equal(ui.get('sku-dialog').modalOpen, true);
-  assert.equal(ui.get('item-name').value, '大根');
+  assert.equal(ui.get('sku-id').value, 'existing-001');
+  assert.equal(ui.get('sku-id').readOnly, true);
+  assert.equal(ui.get('sku-name').value, '既存商品');
+  assert.equal(ui.get('sku-type').value, '確認済み品種');
+  assert.equal(ui.get('sku-note').value, '備考');
 });
