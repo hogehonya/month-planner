@@ -65,3 +65,15 @@ test('既存SKUの編集もPINなしで開き、IDと商品情報を保持する
   assert.equal(ui.get('sku-type').value, '確認済み品種');
   assert.equal(ui.get('sku-note').value, '備考');
 });
+
+test('SKU項目を編集フォームとカードへ表示し、空欄価格をnullで送る', async () => {
+  const ui = await setup([{item_id:'item-01',id:'organic-001',name:'商品',type:'',note:'',cultivation_method:'organic',price_yen:0,packaging_condition:'袋に2本',etag:'v1'}]);
+  const card = ui.get('items').children[0].children.find(child => child.className === 'sku-card');
+  const values = card.children.find(child => child.children.some(entry => entry.textContent === 'SKU ID')).children.map(entry => entry.textContent);
+  assert.ok(values.includes('有機')); assert.ok(values.includes('0円')); assert.ok(values.includes('袋に2本'));
+  card.children.find(child => child.textContent === 'SKUを編集').listeners.click();
+  assert.equal(ui.get('sku-cultivation').value,'organic'); assert.equal(ui.get('sku-price').value,0); assert.equal(ui.get('sku-condition').value,'袋に2本');
+  ui.get('photo').files = []; ui.get('sku-price').value = '';
+  await ui.get('sku-form').listeners.submit({preventDefault(){}});
+  assert.equal(ui.requests[0].price_yen,null); assert.equal(ui.requests[0].cultivation_method,'organic'); assert.equal(ui.requests[0].packaging_condition,'袋に2本');
+});
