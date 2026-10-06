@@ -26,7 +26,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
   const cards = new Map(), filters = {item:new Set(),cultivation:new Set(),price:new Set()};
   let sort = 'registered';
   const status = text=> { $('menu-status').textContent = text; };
-  const canLeave = ()=> { if (dirty || busy) { status('未保存のおしながきがあります。保存してから移動・再読込してください。'); return false; } return true; };
+  const canLeave = ()=> { if (dirty || busy) { status('未保存の販売準備表があります。保存してから移動・再読込してください。'); return false; } return true; };
   const skuName = row=>source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id)?.name ?? row.sku_id;
   function controls() {
     $('menu-save').disabled = !selected || busy || conflict;
@@ -121,7 +121,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     selected = date; const sheet = source.sheets.find(sheet=>sheet.date === date);
     rows = cloneRows(sheet?.rows ?? []); etag = sheet?.etag ?? null; dirty = false; conflict = false;
     $('menu-latest').hidden = true; $('menu-conflict-view').hidden = true; renderDates(); renderRows();
-    status(selected ? `${selected}のおしながき` : '日付を追加しておしながきを作成します。');
+    status(selected ? `${selected}の販売準備表` : '日付を追加して販売準備表を作成します。');
   }
   function receive(next) {
     source = {...next,sheets:next.sheets ?? []};
@@ -133,11 +133,11 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
   }
   $('menu-date').addEventListener('change',()=> { const next = $('menu-date').value; if (canLeave()) select(next); else $('menu-date').value = selected; });
   async function persist(date,nextRows,currentEtag,isNew = false) {
-    busy = true; controls(); renderRows(); status('おしながきを保存中…');
+    busy = true; controls(); renderRows(); status('販売準備表を保存中…');
     try {
       const result = await api({action:'save_sheet',date,rows:nextRows,etag:currentEtag});
       source.sheets = [...source.sheets.filter(sheet=>sheet.date !== date),result.sheet].sort((a,b)=>a.date.localeCompare(b.date));
-      select(date); status('おしながきを保存しました。');
+      select(date); status('販売準備表を保存しました。');
     } catch(e) {
       if (!isNew) { dirty = true; conflict = e.status === 409; $('menu-latest').hidden = !conflict; }
       status(`${e.message} 入力は保持しています。${conflict ? '最新状態を確認してください。' : '保存を再試行できます。'}`);
@@ -156,7 +156,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     if (!$('menu-form').reportValidity()) { status('単価・数量の入力を確認してください。入力は保持しています。'); return; }
     const sku = source.skus.find(sku=>`${sku.item_id}/${sku.id}` === $('menu-sku').value); if (!sku) return;
     if (rows.some(row=>row.item_id === sku.item_id && row.sku_id === sku.id)) { status('このSKUは追加済みです。'); return; }
-    rows.push({item_id:sku.item_id,sku_id:sku.id,price_yen:sku.price_yen ?? null,planned_quantity:null,prepared_quantity:null}); dirty = true; renderRows(); status('SKUを追加しました。おしながきを保存してください。');
+    rows.push({item_id:sku.item_id,sku_id:sku.id,price_yen:sku.price_yen ?? null,planned_quantity:null,prepared_quantity:null}); dirty = true; renderRows(); status('SKUを追加しました。販売準備表を保存してください。');
   });
   $('menu-latest').addEventListener('click',async()=> {
     if (busy) return; busy = true; controls();

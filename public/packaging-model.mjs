@@ -19,7 +19,7 @@ export function validateSKU(body) {
 export function validateSheet(body) {
   const date = body.date;
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date < '0001-01-01' || !Number.isFinite(Date.parse(`${date}T00:00:00Z`)) || new Date(`${date}T00:00:00Z`).toISOString().slice(0,10) !== date) throw new Error('実在する予定日を入力してください。');
-  if (!Array.isArray(body.rows) || body.rows.length > 500) throw new Error('おしながきは500行以内で入力してください。');
+  if (!Array.isArray(body.rows) || body.rows.length > 500) throw new Error('販売準備表は500行以内で入力してください。');
   const seen = new Set();
   const rows = body.rows.map(row=> {
     if (!row || typeof row !== 'object' || Array.isArray(row) || !ITEMS.some(item=>item.id === row.item_id) || typeof row.sku_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(row.sku_id)) throw new Error('SKUを確認してください。');
