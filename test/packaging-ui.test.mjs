@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { CHECKLIST_FIELDS } from '../public/packaging-model.mjs';
 
 class Element {
   constructor() { this.children = []; this.listeners = {}; this.value = ''; this.hidden = false; }
@@ -16,19 +17,30 @@ class Element {
   close() { this.modalOpen = false; }
 }
 
-async function setup(skus = [], saveError = null) {
+async function setup(skus = [], saveError = null, checklistOptions = {}) {
   const elements = new Map();
   const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
   const requests = [];
-  const source = (await readFile(new URL('../public/packaging.mjs', import.meta.url), 'utf8')).replace("import { PHOTO_LIMIT } from './packaging-model.mjs';", 'const PHOTO_LIMIT = 3145728;');
+  let checklist = checklistOptions.initial ?? {checks:Object.fromEntries(Object.keys(CHECKLIST_FIELDS).map(key=>[key,false])),etag:null};
+  let checklistFailure = checklistOptions.failure ?? null;
+  let finishSave;
+  const source = (await readFile(new URL('../public/packaging.mjs', import.meta.url), 'utf8')).replace("import { PHOTO_LIMIT, CHECKLIST_FIELDS } from './packaging-model.mjs';", `const PHOTO_LIMIT = 3145728, CHECKLIST_FIELDS = ${JSON.stringify(CHECKLIST_FIELDS)};`);
   const context = vm.createContext({ document: { getElementById: get, createElement: () => new Element() }, Option: class extends Element { constructor(name, value) { super(); this.textContent = name; this.value = value; } }, fetch: async (_url, options) => {
-    if (options?.method) { requests.push(JSON.parse(options.body)); return {ok:!saveError,json:async()=>saveError ? {error:saveError} : {ok:true}}; }
-    return {ok:true,json:async()=>({items:[{id:'item-01',name:'大根'}],skus})};
+    if (options?.method) {
+      const body = JSON.parse(options.body); requests.push(body);
+      if (body.action === 'save_checklist') {
+        if (checklistOptions.defer) await new Promise(resolve=> {finishSave = resolve;});
+        if (checklistFailure) return {ok:false,status:checklistFailure.status,json:async()=>({error:checklistFailure.message})};
+        checklist = {checks:body.checks,etag:'saved-v1'};
+        return {ok:true,json:async()=>({ok:true,checklist})};
+      }
+      return {ok:!saveError,json:async()=>saveError ? {error:saveError} : {ok:true}}; }
+    return {ok:true,json:async()=>({items:[{id:'item-01',name:'大根'}],skus,checklist})};
   } });
   vm.runInContext(source, context);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(get('status').textContent, '読み込みました。');
-  return { get, requests, elements };
+  return { get, requests, elements, finishSave:()=>finishSave(), setFailure:value=>{checklistFailure = value;}, setChecklist:value=>{checklist=value;} };
 }
 
 test('品目カードからPINなしで登録フォームを直接開き、選択品目に保存する', async () => {
@@ -132,4 +144,42 @@ test('保存失敗時は有機トグルと他の入力を保持する', async ()
   assert.equal(ui.get('sku-name').value,'変更商品');
   assert.match(ui.get('form-status').textContent,/通信失敗.*入力は保持/);
   assert.equal(ui.get('save').disabled,false);
+});
+
+test('手動チェックを明示保存し、成功前は保存中、再読込で共有状態を復元する',async()=> {
+  const ui = await setup([],null,{defer:true});
+  assert.ok(Object.keys(CHECKLIST_FIELDS).every(key=>ui.get(`check-${key}`).checked === false));
+  ui.get('check-photo').checked = true; ui.get('check-photo').listeners.change();
+  assert.equal(ui.requests.length,0);
+  const saving = ui.get('checklist-form').listeners.submit({preventDefault(){}});
+  assert.equal(ui.get('checklist-status').textContent,'チェックを保存中…');
+  assert.equal(ui.get('checklist-fields').disabled,true);
+  ui.finishSave(); await saving;
+  assert.equal(ui.requests[0].action,'save_checklist');
+  assert.equal(ui.requests[0].checks.photo,true); assert.equal(ui.requests[0].etag,null);
+  assert.equal(ui.get('checklist-status').textContent,'チェックを保存しました。');
+  await ui.get('reload').listeners.click();
+  assert.equal(ui.get('check-photo').checked,true);
+});
+
+test('再読込・保存失敗はチェック入力を保持し、競合は最新状態確認後に再試行する',async()=> {
+  const ui = await setup([],null,{failure:{status:500,message:'通信失敗'}});
+  ui.get('check-variety').checked = true; ui.get('check-variety').listeners.change();
+  await ui.get('reload').listeners.click(); assert.equal(ui.get('check-variety').checked,true);
+  await ui.get('checklist-form').listeners.submit({preventDefault(){}});
+  assert.match(ui.get('checklist-status').textContent,/通信失敗.*入力は保持/);
+  assert.equal(ui.get('check-variety').checked,true); assert.equal(ui.get('checklist-save').disabled,false);
+  ui.setFailure({status:409,message:'競合'});
+  await ui.get('checklist-form').listeners.submit({preventDefault(){}});
+  assert.equal(ui.get('checklist-save').disabled,true); assert.equal(ui.get('checklist-latest').hidden,false);
+  const checks = Object.fromEntries(Object.keys(CHECKLIST_FIELDS).map(key=>[key,false]));
+  ui.setChecklist({checks:{...checks,photo:true},etag:'other-v2'});
+  await ui.get('checklist-latest').listeners.click();
+  assert.match(ui.get('checklist-status').textContent,/写真: 確認済み/);
+  assert.equal(ui.get('check-variety').checked,true); assert.equal(ui.get('check-photo').checked,false);
+  ui.setFailure(null);
+  await ui.get('checklist-form').listeners.submit({preventDefault(){}});
+  assert.equal(ui.requests.at(-1).etag,'other-v2');
+  assert.equal(ui.requests.at(-1).checks.variety,true);
+  assert.equal(ui.get('checklist-status').textContent,'チェックを保存しました。');
 });

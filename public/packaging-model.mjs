@@ -15,3 +15,9 @@ export function validateSKU(body) {
   if (row.price_yen !== null && (!Number.isSafeInteger(row.price_yen) || row.price_yen < 0)) throw new Error('価格は0以上の整数円で入力してください。');
   return row;
 }
+
+export const CHECKLIST_FIELDS = { variety:'品種', cultivation:'有機・慣行', price:'価格', packaging:'荷姿', photo:'写真' };
+export function validateChecklist(checks) {
+  if (!checks || Array.isArray(checks) || typeof checks !== 'object' || Object.keys(checks).length !== Object.keys(CHECKLIST_FIELDS).length || Object.keys(checks).some(key=>!Object.hasOwn(CHECKLIST_FIELDS,key)) || Object.keys(CHECKLIST_FIELDS).some(key=>typeof checks[key] !== 'boolean')) throw new Error('チェックの項目を確認してください。');
+  return Object.fromEntries(Object.keys(CHECKLIST_FIELDS).map(key=>[key,checks[key]]));
+}

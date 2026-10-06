@@ -1,6 +1,8 @@
 import { getStore } from '@netlify/blobs';
 import { randomUUID } from 'node:crypto';
-import { ITEMS, PHOTO_LIMIT, validateSKU } from '../../public/packaging-model.mjs';
+import { ITEMS, PHOTO_LIMIT, validateSKU, CHECKLIST_FIELDS, validateChecklist } from '../../public/packaging-model.mjs';
+const checklistKey = 'checklist/preparation.json';
+const emptyChecks = () => Object.fromEntries(Object.keys(CHECKLIST_FIELDS).map(key=>[key,false]));
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 async function readBody(request) {
@@ -40,12 +42,21 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'pa
         }
         const { blobs } = await store.list({ prefix: 'skus/' });
         const skus = (await Promise.all(blobs.map(async ({ key }) => { const row = await store.getWithMetadata(key, { type: 'json' }); return row ? { ...row.data, etag: row.etag } : null; }))).filter(Boolean);
-        return json({ items: ITEMS, skus });
+        const checklist = await store.getWithMetadata(checklistKey, { type:'json' });
+        return json({ items: ITEMS, skus, checklist: { checks:checklist?.data ?? emptyChecks(), etag:checklist?.etag ?? null } });
       }
       if (request.method !== 'POST') throw fail(405, 'GETまたはPOSTを使用してください。');
       if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) throw fail(403, 'このページから操作してください。');
       if (request.headers.get('Content-Type')?.split(';')[0].trim() !== 'application/json') throw fail(415, 'application/jsonを指定してください。');
       const body = await readBody(request);
+      if (body.action === 'save_checklist') {
+        let checks; try { checks = validateChecklist(body.checks); } catch(e) { throw fail(400,e.message); }
+        const store = openStore(), current = await store.getWithMetadata(checklistKey, { type:'json' });
+        if (current && (!current.etag || body.etag !== current.etag) || !current && body.etag != null) throw fail(409,'チェックが変更されました。最新の状態を確認してください。');
+        const result = await store.setJSON(checklistKey,checks,current ? {onlyIfMatch:current.etag} : {onlyIfNew:true});
+        if (!result.modified) throw fail(409,'チェックの更新が重なりました。最新の状態を確認してください。');
+        return json({ok:true,checklist:{checks,etag:result.etag}});
+      }
       if (body.action !== 'save_sku') throw fail(400, '操作を確認してください。');
       let row; try { row = validateSKU(body); } catch (e) { throw fail(400, e.message); }
       const photo = body.photo == null ? null : photoData(body.photo);

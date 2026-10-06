@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHandler } from '../netlify/functions/packaging.mjs';
-import { ITEMS, PHOTO_LIMIT } from '../public/packaging-model.mjs';
+import { ITEMS, PHOTO_LIMIT, CHECKLIST_FIELDS } from '../public/packaging-model.mjs';
 function setup() {
   const data = new Map(); let version = 0;
   const store = {
     async getWithMetadata(key) { return data.get(key) ?? null; },
     async list({prefix}) { return {blobs:[...data.keys()].filter(key=>key.startsWith(prefix)).map(key=>({key}))}; },
     async set(key,value,{metadata}) { data.set(key,{data:value,metadata}); },
-    async setJSON(key,value,options) { const old = data.get(key); if (options.onlyIfNew && old || options.onlyIfMatch && old?.etag !== options.onlyIfMatch) return {modified:false}; data.set(key,{data:value,etag:String(++version)}); return {modified:true}; }
+    async setJSON(key,value,options) { const old = data.get(key); if (options.onlyIfNew && old || options.onlyIfMatch && old?.etag !== options.onlyIfMatch) return {modified:false}; data.set(key,{data:value,etag:String(++version)}); return {modified:true,etag:String(version)}; }
   };
   const handler = createHandler({getStore:()=>store});
   const get = query => handler(new Request('https://planner.example/.netlify/functions/packaging'+(query ?? '')));
@@ -85,4 +85,45 @@ test('追加4品目へSKUを保存・取得し、有機・慣行・未確認を�
     assert.equal(row.type,''); assert.equal(row.price_yen,null);
     assert.equal(row.packaging_condition,''); assert.equal(row.photo_id,null);
   }
+});
+
+test('チェックは全件falseで初期化し、PINなしで保存・再取得、古ETagは拒否する',async()=> {
+  const {get,handler,data} = setup();
+  const post = body=>handler(new Request('https://planner.example/.netlify/functions/packaging',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_checklist',...body})}));
+  const empty = (await (await get()).json()).checklist;
+  assert.deepEqual(empty,{checks:Object.fromEntries(Object.keys(CHECKLIST_FIELDS).map(key=>[key,false])),etag:null});
+  const checks = {...empty.checks,variety:true,cultivation:true};
+  const response = await post({checks,etag:null}); assert.equal(response.status,200);
+  const saved = (await response.json()).checklist;
+  assert.deepEqual(saved.checks,checks); assert.ok(saved.etag);
+  assert.deepEqual((await (await get()).json()).checklist,saved);
+  assert.deepEqual([...data.keys()],['checklist/preparation.json']);
+  assert.equal((await post({checks,etag:null})).status,409);
+  assert.equal((await post({checks:{...checks,photo:true},etag:saved.etag})).status,200);
+  assert.equal((await post({checks,etag:saved.etag})).status,409);
+});
+
+test('チェックの無効値・不足・未知項目を保存せず、SKU登録でも確認済みにしない',async()=> {
+  const {get,post,handler,data} = setup();
+  const checks = Object.fromEntries(Object.keys(CHECKLIST_FIELDS).map(key=>[key,false]));
+  for (const invalid of [null,[],{}, {...checks,photo:'true'},{...checks,extra:true}]) {
+    const response = await handler(new Request('https://planner.example/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_checklist',checks:invalid,etag:null})}));
+    assert.equal(response.status,400);
+  }
+  assert.equal(data.size,0);
+  await post({});
+  assert.deepEqual((await (await get()).json()).checklist.checks,checks);
+});
+
+test('チェックの条件保存競合を拒否し、既存SKU・写真を変更しない',async()=> {
+  const {get,post,handler,store,data} = setup();
+  const png = Buffer.from([137,80,78,71,13,10,26,10,0]);
+  await post({photo:{type:'image/png',data:png.toString('base64')}});
+  const before = [...data.entries()];
+  const checks = Object.fromEntries(Object.keys(CHECKLIST_FIELDS).map(key=>[key,true]));
+  store.setJSON = async()=>({modified:false});
+  const response = await handler(new Request('https://planner.example/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_checklist',checks,etag:null})}));
+  assert.equal(response.status,409);
+  assert.deepEqual([...data.entries()],before);
+  assert.equal((await (await get()).json()).skus.length,1);
 });

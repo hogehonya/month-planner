@@ -1,11 +1,12 @@
-import { PHOTO_LIMIT } from './packaging-model.mjs';
+import { PHOTO_LIMIT, CHECKLIST_FIELDS } from './packaging-model.mjs';
 const $ = id => document.getElementById(id), endpoint = '/.netlify/functions/packaging';
+let checklistEtag = null, checklistDirty = false, checklistBusy = false, checklistReady = false, checklistConflict = false;
 let data = { items: [], skus: [] }, editing = null, busy = false;
 function node(tag, text) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; }
 async function api(body) {
   const response = await fetch(endpoint, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || '通信に失敗しました。');
+  if (!response.ok) throw Object.assign(new Error(result.error || '通信に失敗しました。'), {status:response.status});
   return result;
 }
 function render() {
@@ -33,9 +34,47 @@ function render() {
   }
 }
 async function load() {
-  try { const next = await api(); data = next; const value = $('filter').value; $('filter').replaceChildren(new Option('全品目',''),...data.items.map(item=>new Option(item.name,item.id))); $('filter').value = value; render(); $('status').textContent = '読み込みました。'; }
-  catch(e) { $('status').textContent = e.message; }
+  const requestedEtag = checklistEtag;
+  try { const next = await api(); data = next; if (!checklistDirty && !checklistBusy && checklistEtag === requestedEtag) applyChecklist(next.checklist); const value = $('filter').value; $('filter').replaceChildren(new Option('全品目',''),...data.items.map(item=>new Option(item.name,item.id))); $('filter').value = value; render(); $('status').textContent = '読み込みました。'; }
+  catch(e) { $('status').textContent = e.message; if (!checklistReady) $('checklist-status').textContent = `${e.message} 再読込してください。`; }
 }
+function applyChecklist(checklist) {
+  for (const key of Object.keys(CHECKLIST_FIELDS)) $(`check-${key}`).checked = checklist?.checks[key] ?? false;
+  checklistEtag = checklist?.etag ?? null; checklistReady = true;
+  $('checklist-fields').disabled = false; $('checklist-save').disabled = false;
+  $('checklist-status').textContent = '共有の確認状況を読み込みました。';
+}
+for (const key of Object.keys(CHECKLIST_FIELDS)) $(`check-${key}`).addEventListener('change',()=> {
+  checklistDirty = true; $('checklist-status').textContent = '未保存のチェックがあります。';
+});
+$('checklist-form').addEventListener('submit',async event=> {
+  event.preventDefault(); if (!checklistReady || checklistBusy || checklistConflict) return;
+  checklistBusy = true; $('checklist-fields').disabled = true; $('checklist-save').disabled = true;
+  $('checklist-status').textContent = 'チェックを保存中…';
+  try {
+    const checks = Object.fromEntries(Object.keys(CHECKLIST_FIELDS).map(key=>[key,$(`check-${key}`).checked]));
+    const result = await api({action:'save_checklist',checks,etag:checklistEtag});
+    checklistEtag = result.checklist.etag; checklistDirty = false;
+    $('checklist-status').textContent = 'チェックを保存しました。';
+  } catch(e) {
+    checklistDirty = true; checklistConflict = e.status === 409;
+    $('checklist-latest').hidden = !checklistConflict;
+    $('checklist-status').textContent = `${e.message} 入力は保持しています。${checklistConflict ? '最新の状態を確認して保存をやり直してください。' : '保存を再試行できます。'}`;
+  } finally {
+    checklistBusy = false; $('checklist-fields').disabled = false; $('checklist-save').disabled = checklistConflict;
+  }
+});
+$('checklist-latest').addEventListener('click',async ()=> {
+  if (checklistBusy) return;
+  checklistBusy = true; $('checklist-latest').disabled = true;
+  try {
+    const next = await api(); checklistEtag = next.checklist.etag;
+    const summary = Object.entries(CHECKLIST_FIELDS).map(([key,label])=>`${label}: ${next.checklist.checks[key] ? '確認済み' : '未確認'}`).join('、');
+    $('checklist-status').textContent = `最新の状態：${summary}。入力は保持しています。内容を確認して「チェックを保存」で上書きします。`;
+    checklistConflict = false; $('checklist-save').disabled = false; $('checklist-latest').hidden = true;
+  } catch(e) { $('checklist-status').textContent = `${e.message} 入力は保持しています。最新状態の確認を再試行してください。`; }
+  finally { checklistBusy = false; $('checklist-latest').disabled = false; }
+});
 function setCultivation(method) {
   const toggle = $('sku-cultivation');
   toggle.checked = method === 'organic'; toggle.indeterminate = method === 'unknown';
