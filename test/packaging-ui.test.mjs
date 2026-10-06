@@ -34,7 +34,9 @@ async function setup(skus = []) {
 test('品目カードからPINなしで登録フォームを直接開き、選択品目に保存する', async () => {
   const ui = await setup();
   const button = ui.get('items').children[0].children.find(child => child.className === 'register-sku');
-  assert.equal(button.textContent, 'この品目にSKU・写真を登録');
+  assert.equal(button.textContent, '登録');
+  assert.equal(button['aria-label'], '大根にSKU・写真を登録');
+  assert.equal(ui.get('items').children[0].className, 'packaging-item');
   button.listeners.click();
   assert.equal(ui.get('sku-dialog').modalOpen, true);
   assert.equal(ui.get('item-name').value, '大根');
@@ -53,6 +55,7 @@ test('品目カードからPINなしで登録フォームを直接開き、選�
 
 test('既存SKUの編集もPINなしで開き、IDと商品情報を保持する', async () => {
   const ui = await setup([{item_id:'item-01',id:'existing-001',name:'既存商品',type:'確認済み品種',note:'備考',etag:'v1'}]);
+  assert.equal(ui.get('items').children[0].className, 'packaging-item has-skus');
   const skuCard = ui.get('items').children[0].children.find(child => child.className === 'sku-card');
   skuCard.children.find(child => child.textContent === 'SKUを編集').listeners.click();
   assert.equal(ui.get('sku-dialog').modalOpen, true);

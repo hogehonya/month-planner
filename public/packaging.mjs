@@ -15,6 +15,7 @@ function render() {
     const section = node('section'); section.className = 'packaging-item';
     section.append(node('h2', item.name), node('p', `品目ID: ${item.id}`));
     const skus = data.skus.filter(sku => sku.item_id === item.id).sort((a,b) => a.id.localeCompare(b.id));
+    if (skus.length) section.className += ' has-skus';
     if (!skus.length) section.append(node('p', 'SKU未登録・写真未登録'));
     for (const sku of skus) {
       const card = node('article'); card.className = 'sku-card'; card.append(node('h3', sku.name));
@@ -27,7 +28,7 @@ function render() {
       const editButton = node('button','SKUを編集'); editButton.type = 'button'; editButton.addEventListener('click',()=> open(item,sku)); card.append(editButton);
       section.append(card);
     }
-    const button = node('button','この品目にSKU・写真を登録'); button.type = 'button'; button.className = 'register-sku'; button.setAttribute('aria-label', `${item.name}にSKU・写真を登録`); button.addEventListener('click',()=>open(item)); section.insertBefore(button, section.children[2] ?? null);
+    const button = node('button','登録'); button.type = 'button'; button.className = 'register-sku'; button.setAttribute('aria-label', `${item.name}にSKU・写真を登録`); button.addEventListener('click',()=>open(item)); section.insertBefore(button, section.children[2] ?? null);
     $('items').append(section);
   }
 }
