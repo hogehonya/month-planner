@@ -36,11 +36,18 @@ async function load() {
   try { const next = await api(); data = next; const value = $('filter').value; $('filter').replaceChildren(new Option('全品目',''),...data.items.map(item=>new Option(item.name,item.id))); $('filter').value = value; render(); $('status').textContent = '読み込みました。'; }
   catch(e) { $('status').textContent = e.message; }
 }
+function setCultivation(method) {
+  const toggle = $('sku-cultivation');
+  toggle.checked = method === 'organic'; toggle.indeterminate = method === 'unknown';
+  $('cultivation-status').textContent = ({organic:'ON 有機', conventional:'OFF 慣行', unknown:'未確認'})[method];
+}
+$('sku-cultivation').addEventListener('change',()=>setCultivation($('sku-cultivation').checked ? 'organic' : 'conventional'));
+$('cultivation-reset').addEventListener('click',()=>setCultivation('unknown'));
 function open(item,sku = null) {
   editing = { item,sku }; $('sku-form').reset(); $('item-name').value = item.name;
   $('sku-id').value = sku?.id ?? ''; $('sku-id').readOnly = !!sku;
   $('sku-name').value = sku?.name ?? ''; $('sku-type').value = sku?.type ?? ''; $('sku-note').value = sku?.note ?? '';
-  $('sku-cultivation').value = sku?.cultivation_method ?? 'unknown'; $('sku-price').value = sku?.price_yen ?? ''; $('sku-condition').value = sku?.packaging_condition ?? '';
+  setCultivation(sku?.cultivation_method ?? 'unknown'); $('sku-price').value = sku?.price_yen ?? ''; $('sku-condition').value = sku?.packaging_condition ?? '';
   $('sku-title').textContent = `${item.name}のSKU${sku ? '編集' : '追加'}`; $('form-status').textContent = ''; $('sku-dialog').showModal();
 }
 $('filter').addEventListener('change',render); $('reload').addEventListener('click',load);
@@ -57,7 +64,7 @@ $('sku-form').addEventListener('submit',async event=> {
       const base64 = await new Promise((resolve,reject)=> { const reader = new FileReader(); reader.onload = ()=>resolve(reader.result.split(',')[1]); reader.onerror = ()=>reject(new Error('写真を読み込めませんでした。')); reader.readAsDataURL(file); });
       photo = { type:file.type,data:base64 };
     }
-    await api({ action:'save_sku',item_id:editing.item.id,id:$('sku-id').value,name:$('sku-name').value,type:$('sku-type').value,note:$('sku-note').value,cultivation_method:$('sku-cultivation').value,price_yen:$('sku-price').value.trim() === '' ? null : Number($('sku-price').value),packaging_condition:$('sku-condition').value,etag:editing.sku?.etag ?? null,photo });
+    await api({ action:'save_sku',item_id:editing.item.id,id:$('sku-id').value,name:$('sku-name').value,type:$('sku-type').value,note:$('sku-note').value,cultivation_method:$('sku-cultivation').indeterminate ? 'unknown' : $('sku-cultivation').checked ? 'organic' : 'conventional',price_yen:$('sku-price').value.trim() === '' ? null : Number($('sku-price').value),packaging_condition:$('sku-condition').value,etag:editing.sku?.etag ?? null,photo });
     $('sku-dialog').close(); await load(); $('status').textContent = '保存しました。';
   } catch(e) { $('form-status').textContent = `${e.message} 入力は保持しています。`; }
   finally { busy = false; $('save').disabled = false; $('cancel').disabled = false; }
