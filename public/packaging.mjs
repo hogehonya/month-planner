@@ -21,7 +21,7 @@ function render() {
       const list = node('dl');
       for (const [label,value] of [['SKU ID',sku.id],['品種・種類',sku.type || '未確認']]) list.append(node('dt',label),node('dd',value));
       card.append(list);
-      if (sku.photo_id) { const img = node('img'); img.src = `${endpoint}?photo=${encodeURIComponent(sku.photo_id)}`; img.alt = `${item.name}・${sku.name}の包装写真`; img.loading = 'lazy'; card.append(img); }
+      if (sku.photo_id) { const img = node('img'); img.src = `${endpoint}?photo=${encodeURIComponent(sku.photo_id)}`; img.alt = `${item.name}・${sku.name}の荷姿写真`; img.loading = 'lazy'; card.append(img); }
       else card.append(node('p','写真未登録'));
       if (sku.note) card.append(node('p',sku.note));
       if (pin) { const button = node('button','SKUを編集'); button.type = 'button'; button.addEventListener('click',()=> open(item,sku)); card.append(button); }

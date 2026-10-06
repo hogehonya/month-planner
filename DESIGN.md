@@ -84,9 +84,9 @@ GitHubは `hogehonya/month-planner`。Netlifyは `public` を公開しFunctions�
 
 コメントは `comments/YYYY-MM-DD/{uuid}.json` に `id`, `entry_date`, `editor_name`, `content`, `created_at` を保存する。投稿IDはブラウザで生成し、日時はサーバーで付与する。`onlyIfNew` で追加し、同じIDの再送は投稿者と本文が同じ場合だけ成功とする。既存予定Blobと変更履歴を変更しない。GETは任意の `comment_date` を表示期間内の日付に制限し、その日のentryだけへ `comments` を追加する。コメントの一覧取得は1回だけ行い、投稿日時・ID順で返す。省略時はコメントを取得しない。画面は選択日の変更時にコメントを読み込み直し、古い応答は適用しない。POST `action=add_comment` は既存PIN・同一origin確認に加え、日付・UUID・投稿者・本文を検証する。
 
-## 包装写真マスター（Issue #35）
+## 荷姿写真マスタ（Issue #35）
 
-`/packaging.html` は品目とSKUを分けて表示します。初期品目は指定の20品目で、品目IDは `item-01`〜`item-20` です。SKU ID・SKU名・品種／種類・包装写真・備考をSKU単位で登録します。大根・人参などの品種名や実際のSKUが不明な間は登録せず、判明後に別SKUとして追加します。仮の品種名・写真は作りません。
+`/packaging.html` は品目とSKUを分けて表示します。初期品目は指定の20品目で、品目IDは `item-01`〜`item-20` です。SKU ID・SKU名・品種／種類・荷姿写真・備考をSKU単位で登録します。大根・人参などの品種名や実際のSKUが不明な間は登録せず、判明後に別SKUとして追加します。仮の品種名・写真は作りません。
 
 閲覧は公開、追加・編集は既存の `EDIT_PIN` で認証します。PINはブラウザのメモリのみで保持します。写真はJPEG・PNG・WebP、3MiB以内で、サーバーでもサイズと形式の署名を検証します。写真を選択しない編集は既存写真を保持します。SKU IDは登録後変更できません。通信失敗は入力を保持し、競合は再読込して確認します。
 
