@@ -16,8 +16,29 @@ export function validateSKU(body) {
   return row;
 }
 
-export const CHECKLIST_FIELDS = { variety:'品種', cultivation:'有機・慣行', price:'価格', packaging:'荷姿', photo:'写真' };
-export function validateChecklist(checks) {
-  if (!checks || Array.isArray(checks) || typeof checks !== 'object' || Object.keys(checks).length !== Object.keys(CHECKLIST_FIELDS).length || Object.keys(checks).some(key=>!Object.hasOwn(CHECKLIST_FIELDS,key)) || Object.keys(CHECKLIST_FIELDS).some(key=>typeof checks[key] !== 'boolean')) throw new Error('チェックの項目を確認してください。');
-  return Object.fromEntries(Object.keys(CHECKLIST_FIELDS).map(key=>[key,checks[key]]));
+export function validateSheet(body) {
+  const date = body.date;
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || date < '0001-01-01' || !Number.isFinite(Date.parse(`${date}T00:00:00Z`)) || new Date(`${date}T00:00:00Z`).toISOString().slice(0,10) !== date) throw new Error('実在する予定日を入力してください。');
+  if (!Array.isArray(body.rows) || body.rows.length > 500) throw new Error('おしながきは500行以内で入力してください。');
+  const seen = new Set();
+  const rows = body.rows.map(row=> {
+    if (!row || typeof row !== 'object' || Array.isArray(row) || !ITEMS.some(item=>item.id === row.item_id) || typeof row.sku_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(row.sku_id)) throw new Error('SKUを確認してください。');
+    const key = `${row.item_id}/${row.sku_id}`;
+    if (seen.has(key)) throw new Error('同じSKUを重複して追加できません。'); seen.add(key);
+    const next = {item_id:row.item_id,sku_id:row.sku_id};
+    for (const field of ['price_yen','planned_quantity','prepared_quantity']) {
+      if (row[field] !== null && (!Number.isSafeInteger(row[field]) || row[field] < 0)) throw new Error('単価・予定数・準備数は空欄または0以上の整数で入力してください。');
+      next[field] = row[field];
+    }
+    return next;
+  });
+  return {date,rows};
+}
+export function summarizeSheet(rows) {
+  const result = Object.fromEntries(['planned_quantity','prepared_quantity','planned_amount','prepared_amount'].map(key=>[key,{total:0n,unknown:0}]));
+  for (const row of rows) for (const [quantity,amount] of [['planned_quantity','planned_amount'],['prepared_quantity','prepared_amount']]) {
+    if (row[quantity] === null) result[quantity].unknown++; else result[quantity].total += BigInt(row[quantity]);
+    if (row[quantity] === null || row.price_yen === null) result[amount].unknown++; else result[amount].total += BigInt(row[quantity]) * BigInt(row.price_yen);
+  }
+  return Object.fromEntries(Object.entries(result).map(([key,value])=>[key,{total:value.total.toString(),unknown:value.unknown}]));
 }

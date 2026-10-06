@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHandler } from '../netlify/functions/packaging.mjs';
-import { ITEMS, PHOTO_LIMIT, CHECKLIST_FIELDS } from '../public/packaging-model.mjs';
+import { ITEMS, PHOTO_LIMIT } from '../public/packaging-model.mjs';
 function setup() {
   const data = new Map(); let version = 0;
   const store = {
@@ -87,43 +87,30 @@ test('追加4品目へSKUを保存・取得し、有機・慣行・未確認を�
   }
 });
 
-test('チェックは全件falseで初期化し、PINなしで保存・再取得、古ETagは拒否する',async()=> {
-  const {get,handler,data} = setup();
-  const post = body=>handler(new Request('https://planner.example/.netlify/functions/packaging',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_checklist',...body})}));
-  const empty = (await (await get()).json()).checklist;
-  assert.deepEqual(empty,{checks:Object.fromEntries(Object.keys(CHECKLIST_FIELDS).map(key=>[key,false])),etag:null});
-  const checks = {...empty.checks,variety:true,cultivation:true};
-  const response = await post({checks,etag:null}); assert.equal(response.status,200);
-  const saved = (await response.json()).checklist;
-  assert.deepEqual(saved.checks,checks); assert.ok(saved.etag);
-  assert.deepEqual((await (await get()).json()).checklist,saved);
-  assert.deepEqual([...data.keys()],['checklist/preparation.json']);
-  assert.equal((await post({checks,etag:null})).status,409);
-  assert.equal((await post({checks:{...checks,photo:true},etag:saved.etag})).status,200);
-  assert.equal((await post({checks,etag:saved.etag})).status,409);
+test('日付別おしながきは独立保存し、未入力・0・超過準備を保持して古ETagを拒否する',async()=> {
+  const {get,post,handler,data} = setup();
+  await post({price_yen:100});
+  const skuBefore = [...data.entries()];
+  const save = body=>handler(new Request('https://planner.example/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_sheet',...body})}));
+  assert.deepEqual((await (await get()).json()).sheets,[]);
+  const rows = [{item_id:'item-14',sku_id:'real-001',price_yen:100,planned_quantity:0,prepared_quantity:10}];
+  let response = await save({date:'2026-10-17',rows,etag:null}); assert.equal(response.status,200);
+  const first = (await response.json()).sheet; assert.ok(first.etag);
+  assert.deepEqual((await (await get()).json()).sheets,[first]);
+  assert.equal((await save({date:'2026-10-17',rows:[],etag:null})).status,409);
+  assert.equal((await save({date:'2026-10-18',rows:rows.map(row=>({...row,planned_quantity:null,prepared_quantity:null})),etag:null})).status,200);
+  assert.deepEqual([...data.entries()].filter(([key])=>key.startsWith('skus/')),skuBefore);
+  assert.equal((await save({date:first.date,rows:[],etag:first.etag})).status,200);
+  assert.equal((await save({date:first.date,rows,etag:first.etag})).status,409);
 });
 
-test('チェックの無効値・不足・未知項目を保存せず、SKU登録でも確認済みにしない',async()=> {
-  const {get,post,handler,data} = setup();
-  const checks = Object.fromEntries(Object.keys(CHECKLIST_FIELDS).map(key=>[key,false]));
-  for (const invalid of [null,[],{}, {...checks,photo:'true'},{...checks,extra:true}]) {
-    const response = await handler(new Request('https://planner.example/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_checklist',checks:invalid,etag:null})}));
+test('日付・参照・数量・単価・重複行の不正値はおしながきに保存しない',async()=> {
+  const {post,handler,data} = setup(); await post({});
+  const row = {item_id:'item-14',sku_id:'real-001',price_yen:null,planned_quantity:null,prepared_quantity:null};
+  const invalid = [{date:'2026-02-30'},{date:'2026-1-1'},{rows:[{...row,sku_id:'absent'}]},{rows:[{...row,item_id:'item-01'}]},{rows:[row,row]},{rows:[{...row,planned_quantity:-1}]},{rows:[{...row,prepared_quantity:1.5}]},{rows:[{...row,price_yen:Number.MAX_SAFE_INTEGER+1}]},{rows:[{...row,price_yen:'100'}]}];
+  for (const patch of invalid) {
+    const response = await handler(new Request('https://planner.example/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_sheet',date:'2026-10-17',rows:[row],etag:null,...patch})}));
     assert.equal(response.status,400);
   }
-  assert.equal(data.size,0);
-  await post({});
-  assert.deepEqual((await (await get()).json()).checklist.checks,checks);
-});
-
-test('チェックの条件保存競合を拒否し、既存SKU・写真を変更しない',async()=> {
-  const {get,post,handler,store,data} = setup();
-  const png = Buffer.from([137,80,78,71,13,10,26,10,0]);
-  await post({photo:{type:'image/png',data:png.toString('base64')}});
-  const before = [...data.entries()];
-  const checks = Object.fromEntries(Object.keys(CHECKLIST_FIELDS).map(key=>[key,true]));
-  store.setJSON = async()=>({modified:false});
-  const response = await handler(new Request('https://planner.example/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_checklist',checks,etag:null})}));
-  assert.equal(response.status,409);
-  assert.deepEqual([...data.entries()],before);
-  assert.equal((await (await get()).json()).skus.length,1);
+  assert.equal(data.size,1);
 });
