@@ -16,3 +16,5 @@
 後回しにする同時更新の検証は `docs/concurrency-issue.md` に記録しています。
 
 `public/nourin-base.json` は農林カレンダーの2026年10月・野菜／有機コースA班の取込データです。
+
+- `/packaging.html`: 荷姿写真マスタ（`packaging.mjs`、`packaging-model.mjs`、`packaging.css`）。`/.netlify/functions/packaging` でSKUと写真を読み書き。
