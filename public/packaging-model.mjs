@@ -1,4 +1,4 @@
-export const ITEMS = ['タマネギ','ニンニク','ネギ','カボチャ','ジャガイモ','サツマイモ','サトイモ','ラッカセイ','ミニチンゲンサイ','ハクサイ','シュンギク','ホウレンソウ','コマツナ','ダイコン','カブ','ニンジン','ビーツ','インゲン','レタス','ブロッコリー'].map((name, index) => ({ id: `item-${String(index + 1).padStart(2, '0')}`, name }));
+export const ITEMS = ['タマネギ','ニンニク','ネギ','カボチャ','ジャガイモ','サツマイモ','サトイモ','ラッカセイ','ミニチンゲンサイ','ハクサイ','シュンギク','ホウレンソウ','コマツナ','ダイコン','カブ','ニンジン','ビーツ','インゲン','レタス','ブロッコリー','エダマメ','トマト（大玉）','キャベツ','ショウガ'].map((name, index) => ({ id: `item-${String(index + 1).padStart(2, '0')}`, name }));
 export const PHOTO_LIMIT = 3 * 1024 * 1024;
 export function validateSKU(body) {
   if (!ITEMS.some(item => item.id === body.item_id)) throw new Error('品目を確認してください。');
