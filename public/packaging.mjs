@@ -1,6 +1,6 @@
 import { PHOTO_LIMIT } from './packaging-model.mjs';
 const $ = id => document.getElementById(id), endpoint = '/.netlify/functions/packaging';
-let pin = '', data = { items: [], skus: [] }, editing = null, busy = false;
+let pin = '', data = { items: [], skus: [] }, editing = null, pendingItem = null, busy = false;
 function node(tag, text) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; }
 async function api(body) {
   const response = await fetch(endpoint, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, pin }) } : {});
@@ -27,7 +27,7 @@ function render() {
       if (pin) { const button = node('button','SKUを編集'); button.type = 'button'; button.addEventListener('click',()=> open(item,sku)); card.append(button); }
       section.append(card);
     }
-    if (pin) { const button = node('button','SKUを追加'); button.type = 'button'; button.addEventListener('click',()=>open(item)); section.append(button); }
+    const button = node('button','この品目にSKU・写真を登録'); button.type = 'button'; button.className = 'register-sku'; button.setAttribute('aria-label', `${item.name}にSKU・写真を登録`); button.addEventListener('click',()=> { if (pin) open(item); else { pendingItem = item; showAuth(); } }); section.insertBefore(button, section.children[2] ?? null);
     $('items').append(section);
   }
 }
@@ -41,11 +41,16 @@ function open(item,sku = null) {
   $('sku-name').value = sku?.name ?? ''; $('sku-type').value = sku?.type ?? ''; $('sku-note').value = sku?.note ?? '';
   $('reauth-label').hidden = true; $('reauth-pin').value = ''; $('sku-title').textContent = `${item.name}のSKU${sku ? '編集' : '追加'}`; $('form-status').textContent = ''; $('sku-dialog').showModal();
 }
-$('edit').addEventListener('click',()=> { $('auth').hidden = false; $('pin').focus(); });
-$('logout').addEventListener('click',()=> { pin = ''; $('pin').value = ''; $('logout').hidden = true; $('auth').hidden = true; render(); });
+function showAuth() {
+  $('auth-context').textContent = pendingItem ? `${pendingItem.name}に登録します。編集用PINを入力してください。` : '編集用PINを入力してください。';
+  $('auth').hidden = false; $('pin').focus();
+}
+$('edit').addEventListener('click',showAuth);
+$('start-registration').addEventListener('click',()=> { if (pin) { $('filter').focus(); $('status').textContent = '編集できます。品目カードから登録してください。'; } else showAuth(); });
+$('logout').addEventListener('click',()=> { pin = ''; pendingItem = null; $('pin').value = ''; $('logout').hidden = true; $('auth').hidden = true; render(); });
 $('auth').addEventListener('submit',async event=> {
   event.preventDefault(); pin = $('pin').value;
-  try { await api({action:'verify'}); $('pin').value = ''; $('auth').hidden = true; $('logout').hidden = false; $('status').textContent = '編集できます。PINはこのページを閉じると消去されます。'; render(); }
+  try { await api({action:'verify'}); $('pin').value = ''; $('auth').hidden = true; $('logout').hidden = false; $('status').textContent = '編集できます。PINはこのページを閉じると消去されます。'; render(); if (pendingItem) { const item = pendingItem; pendingItem = null; open(item); } }
   catch(e) { pin = ''; $('status').textContent = e.message; render(); }
 });
 $('filter').addEventListener('change',render); $('reload').addEventListener('click',load);
