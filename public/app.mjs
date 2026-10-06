@@ -1,4 +1,4 @@
-import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, fortnightRange, shiftDate, localDate, validateSlot, textLimit, validateImport, calendarWeeks } from './model.mjs';
+import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, fortnightRange, shiftDate, localDate, validateSlot, textLimit, validateImport, calendarWeekWindows } from './model.mjs';
 const $ = id => document.getElementById(id);
 const API = '/.netlify/functions/planner';
 const editingRequested = new URLSearchParams(location.search).get('edit') === '1';
@@ -8,7 +8,7 @@ let loadSequence = 0, polling = false, lastSync = '';
 let importBusy = false, importPreview = null, importVersion = 0, importComposing = false, importReading = false;
 const slots = new Map();
 const cells = new Map();
-let view = 'month', anchor = localDate(), selectedDate = localDate();
+let view = 'month', anchor = localDate(), selectedDate = localDate(), activeWeekStart = null;
 const dayButtons = new Map();
 const commentsByDate = new Map();
 let commentBusy = false, commentComposing = false, commentId = null, commentAttempt = null;
@@ -89,12 +89,13 @@ function buildMonth() {
     $('days').append(row);
   }
   for (let i = 0; i < (7 - (blanks + range.length) % 7) % 7; i++) $('calendar').append(document.createElement('span'));
-  buildWeeks(); setMode(); selectDay(selectedDate, true);
+  activeWeekStart = null; buildWeeks(); setMode(); selectDay(selectedDate, true);
 }
-function selectDay(date, initial = false) {
+function selectDay(date, initial = false, weekStart = null) {
   if (!initial && unsaved()) { $('status').textContent = '未保存の入力があります。保存・再試行してから日付を移動してください。'; return; }
   const changed = date !== selectedDate;
   if (changed) { loadSequence++; commentsByDate.delete(date); $('comment-message').textContent = ''; }
+  if (weekStart) activeWeekStart = weekStart;
   selectedDate = date; showWeek(date); renderComments(); $('detail-title').textContent = `${date} の予定`;
   for (const row of $('days').children) row.hidden = row.dataset.date !== date;
   for (const [key, day] of dayButtons) { day.button.setAttribute('aria-pressed', String(key === date)); }
@@ -308,15 +309,18 @@ window.addEventListener('beforeunload', event => { if (unsaved()) { event.preven
 
 function buildWeeks() {
   $('week-picker').replaceChildren();
-  calendarWeeks(dates()).forEach((week, index) => {
+  calendarWeekWindows(dates()).forEach((week, index) => {
     const button = document.createElement('button'); button.type = 'button';
     button.textContent = `${index + 1}週`; button.dataset.start = week[0];
     button.setAttribute('aria-label', `${index + 1}週 ${week[0]} 〜 ${week.at(-1)}`);
-    button.onclick = () => selectDay(week[0]); $('week-picker').append(button);
+    button.onclick = () => selectDay(week[0], false, week[0]); $('week-picker').append(button);
   });
 }
 function showWeek(date) {
-  const week = calendarWeeks(dates()).find(week => week.includes(date));
+  const windows = calendarWeekWindows(dates());
+  const week = windows.find(week => week[0] === activeWeekStart && week.includes(date))
+    ?? windows.findLast(week => week.includes(date));
+  activeWeekStart = week[0];
   $('week-heading').textContent = `${week[0]} 〜 ${week.at(-1)}`;
   for (const button of $('week-picker').children) button.setAttribute('aria-pressed', String(button.dataset.start === week[0]));
   for (const [date, day] of dayButtons) day.button.classList.toggle('outside-week', !week.includes(date));
