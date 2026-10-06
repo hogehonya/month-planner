@@ -103,3 +103,12 @@ export function validateImport(value) {
     return clean;
   });
 }
+
+export function calendarWeeks(dates) {
+  const weeks = [];
+  for (const date of dates) {
+    if (!weeks.length || parseDate(date).getUTCDay() === 0) weeks.push([]);
+    weeks.at(-1).push(date);
+  }
+  return weeks;
+}

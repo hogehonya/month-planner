@@ -69,3 +69,21 @@ test('追加予定JSONは指定項目と明示空欄を保持し、不正な全�
     { entries: Array.from({ length: 32 }, (_, i) => ({ entry_date: `2026-10-${String(i + 1).padStart(2, '0')}`, note: 'x' })) },
   ]) assert.throws(() => validateImport(value));
 });
+
+
+test('週一覧は日曜で区切り、月初・月末と2週間の日付を失わない', async () => {
+  const { calendarWeeks } = await import('../public/model.mjs');
+  const month = monthRange('2026-10');
+  const weeks = calendarWeeks(month);
+  assert.deepEqual(weeks.map(week => week.length), [3, 7, 7, 7, 7]);
+  assert.deepEqual(weeks.flat(), month);
+  assert.deepEqual(calendarWeeks(fortnightRange('2026-10-06')).map(week => week.length), [7, 7]);
+});
+
+
+test('6週ある月でも週の日付を失わない', async () => {
+  const { calendarWeeks } = await import('../public/model.mjs');
+  const month = monthRange('2026-08');
+  assert.equal(calendarWeeks(month).length, 6);
+  assert.deepEqual(calendarWeeks(month).flat(), month);
+});
