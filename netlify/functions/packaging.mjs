@@ -54,9 +54,9 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'pa
         const references = await Promise.all(sheet.rows.map(row=>store.getWithMetadata(`skus/${row.item_id}/${row.sku_id}.json`,{type:'json'})));
         if (references.some(saved=>!saved)) throw fail(400,'登録済みのSKUを選んでください。');
         const current = await store.getWithMetadata(key,{type:'json'});
-        if (current && (!current.etag || body.etag !== current.etag) || !current && body.etag != null) throw fail(409,'おしながきが変更されました。最新状態を確認して保存をやり直してください。');
+        if (current && (!current.etag || body.etag !== current.etag) || !current && body.etag != null) throw fail(409,'販売準備表が変更されました。最新状態を確認して保存をやり直してください。');
         const result = await store.setJSON(key,sheet,current ? {onlyIfMatch:current.etag} : {onlyIfNew:true});
-        if (!result.modified) throw fail(409,'おしながきの更新が重なりました。最新状態を確認してください。');
+        if (!result.modified) throw fail(409,'販売準備表の更新が重なりました。最新状態を確認してください。');
         return json({ok:true,sheet:{...sheet,etag:result.etag}});
       }
       if (body.action !== 'save_sku') throw fail(400, '操作を確認してください。');
