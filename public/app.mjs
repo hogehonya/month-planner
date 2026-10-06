@@ -1,4 +1,4 @@
-import { FIELDS, LIMITS, DEFAULT_BASE, monthCalendarRange, monthWeekWindows, fortnightRange, shiftDate, localDate, validateSlot, textLimit, validateImport } from './model.mjs';
+import { FIELDS, LIMITS, DEFAULT_BASE, monthCalendarRange, monthWeekWindows, localDate, validateSlot, textLimit, validateImport } from './model.mjs';
 const $ = id => document.getElementById(id);
 const API = '/.netlify/functions/planner';
 const editingRequested = new URLSearchParams(location.search).get('edit') === '1';
@@ -8,11 +8,11 @@ let loadSequence = 0, polling = false, lastSync = '';
 let importBusy = false, importPreview = null, importVersion = 0, importComposing = false, importReading = false;
 const slots = new Map();
 const cells = new Map();
-let view = 'month', anchor = localDate(), selectedDate = localDate(), activeWeekStart = null;
+let selectedDate = localDate(), activeWeekStart = null;
 const dayButtons = new Map();
 const commentsByDate = new Map();
 let commentBusy = false, commentComposing = false, commentId = null, commentAttempt = null;
-const dates = () => view === 'month' ? monthCalendarRange(month) : fortnightRange(anchor);
+const dates = () => monthCalendarRange(month);
 const formatTime = value => value ? new Date(value).toLocaleString('ja-JP') : '';
 const fieldLabel = field => field === 'base' ? '時間割' : field === 'note' ? '備考' : base.slots[field.startsWith('slot1') ? 0 : 1].label;
 async function request(body, query = '') {
@@ -45,12 +45,9 @@ function authExpired() { authenticated = false; pin = ''; $('pin').value = ''; $
 function buildMonth() {
   cells.clear(); slots.clear(); $('days').replaceChildren();
   const range = dates();
-  if (!range.includes(selectedDate)) selectedDate = view === 'month' ? month + '-01' : range[0];
+  if (!range.includes(selectedDate)) selectedDate = month + '-01';
   commentsByDate.clear();
-  const [year, number] = month.split('-'); $('month-title').textContent = view === 'month' ? `${year}年${Number(number)}月` : `${range[0]} 〜 ${range.at(-1)}`;
-  $('prev').textContent = view === 'month' ? '← 前月' : '← 前の2週間';
-  $('next').textContent = view === 'month' ? '翌月 →' : '次の2週間 →';
-  for (const mode of ['month', 'fortnight']) $(`view-${mode}`).setAttribute('aria-pressed', String(view === mode));
+  const [year, number] = month.split('-'); $('month-title').textContent = `${year}年${Number(number)}月`;
   dayButtons.clear(); $('calendar').replaceChildren();
   const blanks = new Date(`${range[0]}T12:00:00Z`).getUTCDay();
   for (let i = 0; i < blanks; i++) $('calendar').append(document.createElement('span'));
@@ -58,7 +55,7 @@ function buildMonth() {
     const day = new Date(`${date}T12:00:00Z`).getUTCDay();
     const button = document.createElement('button'); button.type = 'button'; button.className = 'calendar-day';
     if (day === 0 || day === 6) button.classList.add('weekend');
-    const outsideMonth = view === 'month' && date.slice(0, 7) !== month;
+    const outsideMonth = date.slice(0, 7) !== month;
     if (outsideMonth) button.classList.add('outside-month');
     if (date === localDate()) { button.classList.add('is-today'); button.setAttribute('aria-current', 'date'); }
     const dayHeading = document.createElement('span'), number = document.createElement('span'), timetable = document.createElement('span'), summary = document.createElement('span');
@@ -162,17 +159,14 @@ async function runSync() {
   catch (error) { if (sequence === loadSequence) $('status').textContent = `同期できません：${error.message}`; return false; }
   finally { polling = false; }
 }
-function changePeriod(offset, mode = view) {
+function changePeriod(offset) {
   if (unsaved()) { $('status').textContent = '未保存の入力があります。保存・再試行してから表示を切り替えてください。'; return; }
   if (polling) return;
-  if (mode !== view) { anchor = selectedDate; month = selectedDate.slice(0, 7); view = mode; }
-  else if (offset === null) { anchor = localDate(); month = anchor.slice(0, 7); selectedDate = anchor; }
-  else if (view === 'fortnight') anchor = shiftDate(dates()[0], offset * 14);
+  if (offset === null) { selectedDate = localDate(); month = selectedDate.slice(0, 7); }
   else { const [year, number] = month.split('-').map(Number); month = localDate(new Date(year, number - 1 + offset, 1)).slice(0, 7); selectedDate = month + '-01'; }
   loadSequence++; lastSync = ''; buildMonth(); sync();
 }
 $('prev').onclick = () => changePeriod(-1); $('next').onclick = () => changePeriod(1); $('today').onclick = () => changePeriod(null);
-$('view-month').onclick = () => changePeriod(0, 'month'); $('view-fortnight').onclick = () => changePeriod(0, 'fortnight');
 $('auth-form').onsubmit = async event => {
   event.preventDefault(); const button = event.submitter; button.disabled = true;
   try { editor = textLimit($('editor').value, 40, '編集者名', true).trim(); pin = $('pin').value; await request({ action: 'verify' }); authenticated = true; $('pin').value = ''; $('auth-message').textContent = ''; setMode(); status(); if ([...cells.values()].some(cell => cell.dirty)) $('status').textContent = '入力を保持しています。「未保存の予定を再試行」で保存できます。'; }
@@ -311,8 +305,7 @@ window.addEventListener('beforeunload', event => { if (unsaved()) { event.preven
 
 function buildWeeks() {
   $('week-picker').replaceChildren();
-  $('week-picker').hidden = view !== 'month';
-  if (view !== 'month') return;
+  $('week-picker').hidden = false;
   monthWeekWindows(month).forEach(({ dates: week, label }, index) => {
     const button = document.createElement('button'); button.type = 'button';
     button.textContent = index === 0 ? label.split('/')[0] : `${index}週`; button.dataset.start = week[0];
@@ -321,7 +314,7 @@ function buildWeeks() {
   });
 }
 function showWeek(date) {
-  const windows = view === 'month' ? monthWeekWindows(month).map(window => window.dates) : [dates()];
+  const windows = monthWeekWindows(month).map(window => window.dates);
   const week = windows.find(week => week[0] === activeWeekStart && week.includes(date))
     ?? windows.findLast(week => week.includes(date));
   activeWeekStart = week[0];
