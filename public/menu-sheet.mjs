@@ -2,10 +2,11 @@ import { summarizeSheet } from './packaging-model.mjs';
 const cloneRows = rows=>rows.map(row=>({...row}));
 const numberValue = input=>input.value.trim() === '' ? null : Number(input.value);
 const format = value=>BigInt(value).toLocaleString('ja-JP');
-export function setupMenu(document,api) {
+export function setupMenu(document,api,editSKU = ()=>{}) {
   const $ = id=>document.getElementById(id);
   const node = (tag,text)=> { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; };
   let source = {items:[],skus:[],sheets:[]}, selected = '', rows = [], etag = null, dirty = false, busy = false, conflict = false;
+  const cards = new Map();
   const status = text=> { $('menu-status').textContent = text; };
   const canLeave = ()=> { if (dirty || busy) { status('未保存のおしながきがあります。保存してから移動・再読込してください。'); return false; } return true; };
   const skuName = row=>source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id)?.name ?? row.sku_id;
@@ -25,12 +26,27 @@ export function setupMenu(document,api) {
       $('menu-summary').append(node('p',`${label}${value.unknown ? '（既知分小計）' : '合計'}: ${format(value.total)}${unit}${value.unknown ? ` ／未入力 ${value.unknown}件` : ''}`));
     }
   }
+  function updateCard(row,refs) {
+    const sku = source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id);
+    const item = source.items.find(item=>item.id === row.item_id);
+    refs.title.textContent = `${item?.name ?? row.item_id}・${skuName(row)}`;
+    refs.info.textContent = `${sku?.type || '品種未確認'} ／ ${({organic:'有機',conventional:'慣行'})[sku?.cultivation_method] || '栽培方法未確認'}${sku?.packaging_condition ? ` ／ ${sku.packaging_condition}` : ''}`;
+    refs.media.replaceChildren();
+    if (sku?.photo_id) {
+      const image = node('img'); image.src = `/.netlify/functions/packaging?photo=${encodeURIComponent(sku.photo_id)}`; image.alt = `${item?.name ?? row.item_id}・${skuName(row)}の荷姿写真`; image.loading = 'lazy'; refs.media.append(image);
+    } else refs.media.append(node('p','写真未登録'));
+    if (sku && item) {
+      const button = node('button',sku.photo_id ? '写真を変更' : '写真を登録'); button.type = 'button'; button.disabled = busy;
+      button.addEventListener('click',()=>editSKU(item,sku)); refs.media.append(button);
+    }
+  }
   function renderRows() {
-    $('menu-rows').replaceChildren();
+    $('menu-rows').replaceChildren(); cards.clear();
     for (const row of rows) {
-      const card = node('article'); card.className = 'menu-row'; card.append(node('h3',skuName(row)));
-      const sku = source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id);
-      card.append(node('p',`${sku?.type || '品種未確認'} ／ ${({organic:'有機',conventional:'慣行'})[sku?.cultivation_method] || '栽培方法未確認'}${sku?.packaging_condition ? ` ／ ${sku.packaging_condition}` : ''}`));
+      const card = node('article'); card.className = 'menu-row';
+      const title = node('h3'), info = node('p'), media = node('div'); media.className = 'menu-row-photo';
+      card.append(title,info);
+      const refs = {title,info,media}; cards.set(`${row.item_id}/${row.sku_id}`,refs); updateCard(row,refs);
       const state = node('p'); state.className = 'menu-row-state';
       const updateState = ()=> { state.textContent = row.planned_quantity === null || row.prepared_quantity === null ? '数量未入力' : row.prepared_quantity >= row.planned_quantity ? '準備完了' : `あと${row.planned_quantity-row.prepared_quantity}`; };
       const fields = node('div'); fields.className = 'menu-row-fields';
@@ -43,7 +59,7 @@ export function setupMenu(document,api) {
           input.setCustomValidity(''); row[key] = value; dirty = true; status('未保存の変更があります。'); summary(); updateState();
         }); wrapper.append(input); fields.append(wrapper);
       }
-      updateState(); card.append(fields,state); $('menu-rows').append(card);
+      updateState(); card.append(fields,state,media); $('menu-rows').append(card);
     }
     if (!rows.length) $('menu-rows').append(node('p',selected ? '登録済みSKUを選んで追加してください。' : '日付を追加してください。'));
     summary(); controls();
@@ -64,6 +80,10 @@ export function setupMenu(document,api) {
   }
   function receive(next) {
     source = {...next,sheets:next.sheets ?? []};
+    if (dirty || busy) {
+      for (const row of rows) { const refs = cards.get(`${row.item_id}/${row.sku_id}`); if (refs) updateCard(row,refs); }
+      return;
+    }
     if (!dirty && !busy) select(source.sheets.some(sheet=>sheet.date === selected) ? selected : source.sheets.find(sheet=>sheet.date === '2026-10-17')?.date ?? source.sheets.at(-1)?.date ?? '');
   }
   $('menu-date').addEventListener('change',()=> { const next = $('menu-date').value; if (canLeave()) select(next); else $('menu-date').value = selected; });

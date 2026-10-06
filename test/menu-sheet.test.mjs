@@ -12,7 +12,7 @@ class Element {
   reportValidity(){return !this.validation && this.children.every(child=>child.reportValidity());}
 }
 function setup(failure=null) {
-  const elements = new Map(), requests=[];
+  const elements = new Map(), requests=[], edits=[];
   const get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
   let sheets=[{date:'2026-10-17',rows:[{...row}],etag:'v1'}];
   let saveFailure=failure;
@@ -24,10 +24,10 @@ function setup(failure=null) {
     sheets=[...sheets.filter(s=>s.date!==body.date),sheet];return {ok:true,sheet};
   };
   get('menu-form').append(get('menu-rows'));
-  const menu=setupMenu({getElementById:get,createElement:tag=>new Element(tag)},api);
-  const source={items:[],skus:[{item_id:'item-14',id:'real-001',name:'大根',price_yen:100},{item_id:'item-01',id:'sample',name:'サンプル',price_yen:200}],sheets};
+  const menu=setupMenu({getElementById:get,createElement:tag=>new Element(tag)},api,(item,sku)=>edits.push({item,sku}));
+  const source={items:[{id:'item-14',name:'ダイコン'}],skus:[{item_id:'item-14',id:'real-001',name:'大根',price_yen:100},{item_id:'item-01',id:'sample',name:'サンプル',price_yen:200}],sheets};
   menu.receive(source);
-  return {get,menu,requests,setFailure:value=>{saveFailure=value;},source};
+  return {get,menu,requests,edits,setFailure:value=>{saveFailure=value;},source};
 }
 const submit=()=>({preventDefault(){}});
 const input=(ui,index)=>ui.get('menu-rows').children[0].children[2].children[index].children[0];
@@ -98,4 +98,36 @@ test('全件未入力の数量・金額は0合計と表示しない',()=> {
   assert.equal(ui.get('menu-summary').children[1].textContent,'準備数: 未入力（1件）');
   assert.equal(ui.get('menu-summary').children[3].textContent,'準備済み売価: 未入力（1件）');
   assert.match(ui.get('menu-summary').children[0].textContent,/10/);
+});
+
+
+test('おしながきに対応SKUの写真を表示し、未登録から編集できる',()=> {
+  const ui=setup(), card=ui.get('menu-rows').children[0];
+  assert.match(card.children[0].textContent,/ダイコン/);
+  const media=card.children.find(child=>child.className==='menu-row-photo');
+  assert.equal(media.children[0].textContent,'写真未登録');
+  media.children[1].listeners.click();
+  assert.equal(ui.edits[0].sku.id,'real-001'); assert.equal(ui.edits[0].item.id,'item-14');
+  ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,photo_id:sku.id==='real-001'?'real-photo':'sample-photo'}))});
+  const updated=ui.get('menu-rows').children[0].children.find(child=>child.className==='menu-row-photo');
+  assert.equal(updated.children[0].src,'/.netlify/functions/packaging?photo=real-photo');
+  assert.match(updated.children[0].alt,/ダイコン.*大根/); assert.equal(updated.children[0].loading,'lazy');
+  assert.equal(updated.children[1].textContent,'写真を変更');
+});
+
+test('写真更新は未保存の単価・数量原文と不正値を保持し、おしながきを保存しない',async()=> {
+  const ui=setup(), planned=input(ui,1), price=input(ui,0), prepared=input(ui,2);
+  planned.value='1.5';planned.listeners.input();price.value='00150';price.listeners.input();prepared.value='012';prepared.listeners.input();
+  const next={...ui.source,skus:ui.source.skus.map(sku=>sku.id==='real-001'?{...sku,photo_id:'new-photo',price_yen:999}:sku)};
+  ui.menu.receive(next);
+  assert.equal(input(ui,1),planned);assert.equal(planned.value,'1.5');assert.ok(planned.validation);
+  assert.equal(price.value,'00150');assert.equal(prepared.value,'012');assert.equal(ui.requests.length,0);
+  const media=ui.get('menu-rows').children[0].children.find(child=>child.className==='menu-row-photo');
+  assert.match(media.children[0].src,/new-photo/);
+  assert.equal(ui.menu.canLeave(),false);
+  planned.value='11';planned.listeners.input();
+  await ui.get('menu-form').listeners.submit(submit());
+  assert.equal(ui.requests[0].rows[0].price_yen,150);
+  assert.equal(ui.requests[0].rows[0].prepared_quantity,12);
+  assert.equal(ui.requests[0].etag,'v1');
 });
