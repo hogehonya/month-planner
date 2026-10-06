@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { calendarWeekWindows, fortnightRange, monthRange } from '../public/model.mjs';
+import { calendarWeekWindows, monthWeekWindows, fortnightRange, monthCalendarRange } from '../public/model.mjs';
 
 function load(view, range) {
   const picker = { children: [], hidden: false, replaceChildren() { this.children = []; }, append(button) { this.children.push(button); } };
@@ -11,7 +11,7 @@ function load(view, range) {
   const source = readFileSync(new URL('../public/app.mjs', import.meta.url), 'utf8');
   const functions = source.slice(source.indexOf('function buildWeeks()'), source.indexOf('function renderComments()'));
   const context = {
-    view, dates: () => range, calendarWeekWindows, activeWeekStart: null, dayButtons,
+    view, month: '2026-08', monthWeekWindows, dates: () => range, calendarWeekWindows, activeWeekStart: null, dayButtons,
     $: id => id === 'week-picker' ? picker : heading,
     document: { createElement: () => ({ dataset: {}, attributes: {}, setAttribute(key, value) { this.attributes[key] = value; } }) },
   };
@@ -34,21 +34,47 @@ test('2週間表示は週ボタンを隠し、後半の日付を選んでも年�
 });
 
 test('月間へ戻ると月初からの週番号を復元し、翌週の日付選択では表示を維持する', () => {
-  const range = monthRange('2026-08');
+  const range = monthCalendarRange('2026-08');
   const app = load('month', range);
   app.context.buildWeeks();
   assert.equal(app.picker.hidden, false);
-  assert.deepEqual(app.picker.children.map(button => button.textContent), ['1週', '2週', '3週', '4週', '5週', '6週']);
+  assert.deepEqual(app.picker.children.map(button => button.textContent), monthWeekWindows('2026-08').map(window => window.label));
   app.picker.children[0].onclick();
-  app.context.showWeek('2026-08-07');
-  assert.deepEqual(app.visible(), range.slice(0, 8));
+  app.context.showWeek('2026-07-30');
+  assert.deepEqual(app.visible(), range.slice(0, 14));
   assert.equal(app.picker.children[0].attributes['aria-pressed'], 'true');
-  app.picker.children[5].onclick();
-  assert.deepEqual(app.visible(), range.slice(-2));
+  app.picker.children[6].onclick();
+  assert.deepEqual(app.visible(), range.slice(-14));
   app.context.view = 'fortnight';
   app.context.buildWeeks();
   app.context.view = 'month';
   app.context.buildWeeks();
   assert.equal(app.picker.hidden, false);
-  assert.equal(app.picker.children.length, 6);
+  assert.equal(app.picker.children.length, 7);
+});
+
+
+test('前後月は重複日を保持せず対象月の1日を選び、未送信入力は移動を止める', () => {
+  const source = readFileSync(new URL('../public/app.mjs', import.meta.url), 'utf8');
+  const navigation = source.slice(source.indexOf('function changePeriod('), source.indexOf("$('prev').onclick"));
+  let dirty = false, builds = 0, syncs = 0;
+  const status = {};
+  const context = {
+    month: '2026-10', view: 'month', selectedDate: '2026-09-30', anchor: '2026-10-01',
+    polling: false, loadSequence: 0, lastSync: '', unsaved: () => dirty,
+    $: () => status, localDate: date => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-'),
+    buildMonth: () => builds++, sync: () => syncs++,
+  };
+  runInNewContext(navigation, context);
+  context.changePeriod(-1);
+  assert.equal(context.month, '2026-09');
+  assert.equal(context.selectedDate, '2026-09-01');
+  context.changePeriod(1);
+  assert.equal(context.selectedDate, '2026-10-01');
+  dirty = true;
+  context.changePeriod(1);
+  assert.equal(context.month, '2026-10');
+  assert.equal(builds, 2);
+  assert.equal(syncs, 2);
+  assert.match(status.textContent, /未保存/);
 });

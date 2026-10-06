@@ -101,3 +101,29 @@ test('週番号からその週と次週を表示し、月初・月末と6週の�
   const dates = fortnightRange('2027-01-01');
   assert.deepEqual(calendarWeekWindows(dates), [dates, dates.slice(7)]);
 });
+
+
+test('月間は前週と翌週を含み、境界の週を月付き14日窓で選ぶ', async () => {
+  const { monthCalendarRange, monthWeekWindows } = await import('../public/model.mjs');
+  const dates = monthCalendarRange('2026-10');
+  assert.equal(dates[0], '2026-09-20');
+  assert.equal(dates.at(-1), '2026-11-07');
+  assert.equal(dates.length, 49);
+  const windows = monthWeekWindows('2026-10');
+  assert.equal(windows[0].label, '9月4週/10月1週');
+  assert.equal(windows[0].dates.at(-1), '2026-10-03');
+  assert.equal(windows.at(-1).label, '10月5週/11月1週');
+  for (const month of ['2026-08', '2027-01', '2028-02']) {
+    const range = monthCalendarRange(month);
+    assert.ok(range.length <= 56);
+    const windows = monthWeekWindows(month);
+    assert.ok(windows.every(window => window.dates.length === 14));
+    assert.equal(range[0], windows[0].dates[0]);
+    assert.equal(range.at(-1), windows.at(-1).dates.at(-1));
+  }
+  assert.equal(monthCalendarRange('2026-08').length, 56);
+  assert.ok(monthCalendarRange('2026-09').includes('2026-10-01'));
+  assert.deepEqual(monthWeekWindows('2026-09').find(window => window.label === '9月4週/10月1週'), windows[0]);
+  assert.ok(dates.includes('2026-10-01'));
+  assert.throws(() => dateRange('2026-09-20', '2026-11-07'));
+});

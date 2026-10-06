@@ -70,3 +70,6 @@ dialog::backdrop{background:#0008}.dialog-header{display:flex;align-items:start;
 }
 
 @media(max-width:600px){#comments .meta,#comments .hint{font-size:calc(16px * var(--font-scale))}}
+
+.calendar-day.outside-month{border-top:3px dashed var(--line)}.outside-month .day-number{color:var(--muted)}
+@media(max-width:600px){.week-picker{flex-wrap:wrap}.week-picker button{flex:1 0 70px}}

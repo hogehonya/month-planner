@@ -1,4 +1,4 @@
-import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, fortnightRange, shiftDate, localDate, validateSlot, textLimit, validateImport, calendarWeekWindows } from './model.mjs';
+import { FIELDS, LIMITS, DEFAULT_BASE, monthCalendarRange, monthWeekWindows, fortnightRange, shiftDate, localDate, validateSlot, textLimit, validateImport } from './model.mjs';
 const $ = id => document.getElementById(id);
 const API = '/.netlify/functions/planner';
 const editingRequested = new URLSearchParams(location.search).get('edit') === '1';
@@ -12,7 +12,7 @@ let view = 'month', anchor = localDate(), selectedDate = localDate(), activeWeek
 const dayButtons = new Map();
 const commentsByDate = new Map();
 let commentBusy = false, commentComposing = false, commentId = null, commentAttempt = null;
-const dates = () => view === 'month' ? monthRange(month) : fortnightRange(anchor);
+const dates = () => view === 'month' ? monthCalendarRange(month) : fortnightRange(anchor);
 const formatTime = value => value ? new Date(value).toLocaleString('ja-JP') : '';
 const fieldLabel = field => field === 'base' ? '時間割' : field === 'note' ? '備考' : base.slots[field.startsWith('slot1') ? 0 : 1].label;
 async function request(body, query = '') {
@@ -45,7 +45,7 @@ function authExpired() { authenticated = false; pin = ''; $('pin').value = ''; $
 function buildMonth() {
   cells.clear(); slots.clear(); $('days').replaceChildren();
   const range = dates();
-  if (!range.includes(selectedDate)) selectedDate = range[0];
+  if (!range.includes(selectedDate)) selectedDate = view === 'month' ? month + '-01' : range[0];
   commentsByDate.clear();
   const [year, number] = month.split('-'); $('month-title').textContent = view === 'month' ? `${year}年${Number(number)}月` : `${range[0]} 〜 ${range.at(-1)}`;
   $('prev').textContent = view === 'month' ? '← 前月' : '← 前の2週間';
@@ -58,10 +58,12 @@ function buildMonth() {
     const day = new Date(`${date}T12:00:00Z`).getUTCDay();
     const button = document.createElement('button'); button.type = 'button'; button.className = 'calendar-day';
     if (day === 0 || day === 6) button.classList.add('weekend');
+    const outsideMonth = view === 'month' && date.slice(0, 7) !== month;
+    if (outsideMonth) button.classList.add('outside-month');
     if (date === localDate()) { button.classList.add('is-today'); button.setAttribute('aria-current', 'date'); }
     const dayHeading = document.createElement('span'), number = document.createElement('span'), timetable = document.createElement('span'), summary = document.createElement('span');
     dayHeading.className = 'day-heading'; timetable.className = 'day-timetable';
-    number.className = 'day-number'; number.textContent = Number(date.slice(-2));
+    number.className = 'day-number'; number.textContent = outsideMonth ? `${Number(date.slice(5, 7))}/${Number(date.slice(-2))}` : Number(date.slice(-2));
     const weekday = document.createElement('span'); weekday.className = 'day-weekday'; weekday.textContent = `（${'日月火水木金土'[day]}）`; number.append(weekday);
     summary.className = 'day-summary';
     dayHeading.append(number, timetable); button.append(dayHeading, summary); button.setAttribute('aria-label', date); button.onclick = () => { if (selectDay(date) && matchMedia('(max-width:600px)').matches) $('detail-title').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
@@ -166,7 +168,7 @@ function changePeriod(offset, mode = view) {
   if (mode !== view) { anchor = selectedDate; month = selectedDate.slice(0, 7); view = mode; }
   else if (offset === null) { anchor = localDate(); month = anchor.slice(0, 7); selectedDate = anchor; }
   else if (view === 'fortnight') anchor = shiftDate(dates()[0], offset * 14);
-  else { const [year, number] = month.split('-').map(Number); month = localDate(new Date(year, number - 1 + offset, 1)).slice(0, 7); }
+  else { const [year, number] = month.split('-').map(Number); month = localDate(new Date(year, number - 1 + offset, 1)).slice(0, 7); selectedDate = month + '-01'; }
   loadSequence++; lastSync = ''; buildMonth(); sync();
 }
 $('prev').onclick = () => changePeriod(-1); $('next').onclick = () => changePeriod(1); $('today').onclick = () => changePeriod(null);
@@ -311,15 +313,15 @@ function buildWeeks() {
   $('week-picker').replaceChildren();
   $('week-picker').hidden = view !== 'month';
   if (view !== 'month') return;
-  calendarWeekWindows(dates()).forEach((week, index) => {
+  monthWeekWindows(month).forEach(({ dates: week, label }) => {
     const button = document.createElement('button'); button.type = 'button';
-    button.textContent = `${index + 1}週`; button.dataset.start = week[0];
-    button.setAttribute('aria-label', `${index + 1}週 ${week[0]} 〜 ${week.at(-1)}`);
+    button.textContent = label; button.dataset.start = week[0];
+    button.setAttribute('aria-label', `${label} ${week[0]} 〜 ${week.at(-1)}`);
     button.onclick = () => selectDay(week[0], false, week[0]); $('week-picker').append(button);
   });
 }
 function showWeek(date) {
-  const windows = view === 'month' ? calendarWeekWindows(dates()) : [dates()];
+  const windows = view === 'month' ? monthWeekWindows(month).map(window => window.dates) : [dates()];
   const week = windows.find(week => week[0] === activeWeekStart && week.includes(date))
     ?? windows.findLast(week => week.includes(date));
   activeWeekStart = week[0];
