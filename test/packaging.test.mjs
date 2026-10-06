@@ -15,10 +15,12 @@ function setup() {
   const post = body => handler(new Request('https://planner.example/.netlify/functions/packaging',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_sku',item_id:'item-14',id:'real-001',name:'実際のSKU',type:'',note:'包装の備考',...body})}));
   return {data,store,get,post,handler};
 }
-test('公開20品目と空のSKU、架空の品種・写真なし',async()=> {
+test('公開24品目と空のSKU、既存20品目のIDを保持し架空の品種・写真なし',async()=> {
   const {get} = setup(); const view = await (await get()).json();
-  assert.deepEqual(view.items,ITEMS); assert.equal(view.items.length,20); assert.deepEqual(view.skus,[]);
-  assert.deepEqual(view.items.map(x=>x.name),['タマネギ','ニンニク','ネギ','カボチャ','ジャガイモ','サツマイモ','サトイモ','ラッカセイ','ミニチンゲンサイ','ハクサイ','シュンギク','ホウレンソウ','コマツナ','ダイコン','カブ','ニンジン','ビーツ','インゲン','レタス','ブロッコリー']);
+  assert.deepEqual(view.items,ITEMS); assert.equal(view.items.length,24); assert.deepEqual(view.skus,[]);
+  assert.deepEqual(view.items.slice(0,20).map(x=>x.name),['タマネギ','ニンニク','ネギ','カボチャ','ジャガイモ','サツマイモ','サトイモ','ラッカセイ','ミニチンゲンサイ','ハクサイ','シュンギク','ホウレンソウ','コマツナ','ダイコン','カブ','ニンジン','ビーツ','インゲン','レタス','ブロッコリー']);
+  assert.deepEqual(view.items.slice(0,20).map(x=>x.id),Array.from({length:20},(_,i)=>`item-${String(i+1).padStart(2,'0')}`));
+  assert.deepEqual(view.items.slice(20),[{id:'item-21',name:'エダマメ'},{id:'item-22',name:'トマト（大玉）'},{id:'item-23',name:'キャベツ'},{id:'item-24',name:'ショウガ'}]);
 });
 test('PINなしで保存・入力検証・予定のキーに書き込まない',async()=> {
   const {post,data,handler} = setup();
@@ -66,4 +68,21 @@ test('栽培方法・価格・荷姿条件の不正な値を拒否する', async
     assert.equal((await post(patch)).status,400);
   }
   assert.equal(data.size,0);
+});
+
+test('追加4品目へSKUを保存・取得し、有機・慣行・未確認を保持する',async()=> {
+  const {post,get} = setup();
+  const methods = ['organic','conventional','unknown','conventional'];
+  for (let i = 0; i < 4; i++) {
+    assert.equal((await post({item_id:`item-${21+i}`,id:`added-${i}`,cultivation_method:methods[i]})).status,200);
+  }
+  const rows = (await (await get()).json()).skus;
+  assert.equal(rows.length,4);
+  for (let i = 0; i < 4; i++) {
+    const row = rows.find(row=>row.id===`added-${i}`);
+    assert.equal(row.item_id,`item-${21+i}`);
+    assert.equal(row.cultivation_method,methods[i]);
+    assert.equal(row.type,''); assert.equal(row.price_yen,null);
+    assert.equal(row.packaging_condition,''); assert.equal(row.photo_id,null);
+  }
 });
