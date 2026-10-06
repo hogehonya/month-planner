@@ -1,4 +1,4 @@
-import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, fortnightRange, shiftDate, localDate, validateSlot, textLimit, validateImport } from './model.mjs';
+import { FIELDS, LIMITS, DEFAULT_BASE, monthRange, fortnightRange, shiftDate, localDate, validateSlot, textLimit, validateImport, calendarWeeks } from './model.mjs';
 const $ = id => document.getElementById(id);
 const API = '/.netlify/functions/planner';
 const editingRequested = new URLSearchParams(location.search).get('edit') === '1';
@@ -10,6 +10,8 @@ const slots = new Map();
 const cells = new Map();
 let view = 'month', anchor = localDate(), selectedDate = localDate();
 const dayButtons = new Map();
+const commentsByDate = new Map();
+let commentBusy = false, commentComposing = false, commentId = null, commentAttempt = null;
 const dates = () => view === 'month' ? monthRange(month) : fortnightRange(anchor);
 const formatTime = value => value ? new Date(value).toLocaleString('ja-JP') : '';
 const fieldLabel = field => field === 'base' ? '時間割' : field === 'note' ? '備考' : base.slots[field.startsWith('slot1') ? 0 : 1].label;
@@ -19,7 +21,7 @@ async function request(body, query = '') {
   if (!response.ok) throw Object.assign(new Error(result.error || '通信に失敗しました。'), { status: response.status });
   return result;
 }
-function unsaved() { return importBusy || !!activeSlot || dialogDirty || dialogBusy || [...cells.values()].some(cell => cell.dirty || cell.inflight || cell.composing); }
+function unsaved() { return commentBusy || commentComposing || !!$('comment-content').value || importBusy || !!activeSlot || dialogDirty || dialogBusy || [...cells.values()].some(cell => cell.dirty || cell.inflight || cell.composing); }
 function status() {
   const list = [...cells.values()], failed = list.filter(cell => cell.error).length, waiting = list.filter(cell => cell.dirty || cell.inflight).length;
   $('status').textContent = failed ? `${failed}件を保存できませんでした。入力は保持しています。` : waiting ? `${waiting}件が未保存・保存中です。` : lastSync ? `同期済み · ${lastSync}` : '読み込み中…';
@@ -27,6 +29,9 @@ function status() {
 }
 function cellStatus(cell, message = '', state = '') { cell.message.textContent = message; cell.message.dataset.state = state; status(); }
 function setMode() {
+  $('comment-form').hidden = !editingRequested;
+  $('comment-content').readOnly = !authenticated || commentBusy || importBusy;
+  $('comment-submit').disabled = !authenticated || commentBusy || importBusy;
   $('import-panel').hidden = !editingRequested;
   setImportControls();
   $('auth').hidden = !editingRequested || authenticated;
@@ -41,6 +46,7 @@ function buildMonth() {
   cells.clear(); slots.clear(); $('days').replaceChildren();
   const range = dates();
   if (!range.includes(selectedDate)) selectedDate = range[0];
+  commentsByDate.clear();
   const [year, number] = month.split('-'); $('month-title').textContent = view === 'month' ? `${year}年${Number(number)}月` : `${range[0]} 〜 ${range.at(-1)}`;
   $('prev').textContent = view === 'month' ? '← 前月' : '← 前の2週間';
   $('next').textContent = view === 'month' ? '翌月 →' : '次の2週間 →';
@@ -55,8 +61,10 @@ function buildMonth() {
     if (date === localDate()) { button.classList.add('is-today'); button.setAttribute('aria-current', 'date'); }
     const dayHeading = document.createElement('span'), number = document.createElement('span'), timetable = document.createElement('span'), summary = document.createElement('span');
     dayHeading.className = 'day-heading'; timetable.className = 'day-timetable';
-    number.className = 'day-number'; number.textContent = Number(date.slice(-2)); summary.className = 'day-summary';
-    dayHeading.append(number, timetable); button.append(dayHeading, summary); button.setAttribute('aria-label', date); button.onclick = () => selectDay(date);
+    number.className = 'day-number'; number.textContent = Number(date.slice(-2));
+    const weekday = document.createElement('span'); weekday.className = 'day-weekday'; weekday.textContent = `（${'日月火水木金土'[day]}）`; number.append(weekday);
+    summary.className = 'day-summary';
+    dayHeading.append(number, timetable); button.append(dayHeading, summary); button.setAttribute('aria-label', date); button.onclick = () => { if (selectDay(date) && matchMedia('(max-width:600px)').matches) $('detail-title').scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     dayButtons.set(date, { button, timetable, summary }); $('calendar').append(button);
     const row = document.createElement('tr'); row.dataset.date = date; if (day === 0 || day === 6) row.classList.add('weekend'); if (date === localDate()) row.classList.add('is-today');
     const heading = document.createElement('th'); heading.scope = 'row'; heading.textContent = `${Number(date.slice(-2))}日（${'日月火水木金土'[day]}）`;
@@ -81,13 +89,17 @@ function buildMonth() {
     $('days').append(row);
   }
   for (let i = 0; i < (7 - (blanks + range.length) % 7) % 7; i++) $('calendar').append(document.createElement('span'));
-  setMode(); selectDay(selectedDate, true);
+  buildWeeks(); setMode(); selectDay(selectedDate, true);
 }
 function selectDay(date, initial = false) {
   if (!initial && unsaved()) { $('status').textContent = '未保存の入力があります。保存・再試行してから日付を移動してください。'; return; }
-  selectedDate = date; $('detail-title').textContent = `${date} の予定`;
+  const changed = date !== selectedDate;
+  if (changed) { loadSequence++; commentsByDate.delete(date); $('comment-message').textContent = ''; }
+  selectedDate = date; showWeek(date); renderComments(); $('detail-title').textContent = `${date} の予定`;
   for (const row of $('days').children) row.hidden = row.dataset.date !== date;
   for (const [key, day] of dayButtons) { day.button.setAttribute('aria-pressed', String(key === date)); }
+  if (!initial && changed) sync();
+  return true;
 }
 function schedule(cell) { clearTimeout(cell.timer); if (!cell.error) cell.timer = setTimeout(() => save(cell), 500); }
 async function save(cell) {
@@ -118,6 +130,7 @@ function paint(data) {
   base = data.base;
   for (let i = 0; i < 2; i++) { const heading = $(`slot${i + 1}-heading`); heading.replaceChildren(document.createTextNode(base.slots[i].label)); const time = document.createElement('span'); time.className = 'slot-time'; time.textContent = base.slots[i].time; heading.append(time); }
   for (const row of data.entries) {
+    if (Object.hasOwn(row, 'comments')) commentsByDate.set(row.entry_date, row.comments);
     paintDay(row);
     for (const field of FIELDS) {
       if (field !== 'note') { updateSlot(slots.get(`${row.entry_date}:${field}`), row); continue; }
@@ -128,6 +141,7 @@ function paint(data) {
       cell.meta.textContent = row.last_editor ? `${row.last_editor} · ${formatTime(row.updated_at)}` : '';
     }
   }
+  renderComments();
   $('history').replaceChildren();
   for (const event of data.history) { const li = document.createElement('li'); li.textContent = `${formatTime(event.changed_at)} · ${event.editor_name} · ${event.entry_date || '共有設定'} · ${fieldLabel(event.field_name)}`; $('history').append(li); }
   if (!data.history.length) { const li = document.createElement('li'); li.textContent = 'まだ変更履歴はありません。'; $('history').append(li); }
@@ -135,12 +149,13 @@ function paint(data) {
 }
 async function sync() {
   if (importBusy || pendingSync) return false;
+  const syncedSelection = selectedDate;
   pendingSync = runSync();
-  try { return await pendingSync; } finally { pendingSync = null; }
+  try { return await pendingSync; } finally { pendingSync = null; if (syncedSelection !== selectedDate) sync(); }
 }
 async function runSync() {
   polling = true; const sequence = loadSequence, epoch = writeEpoch; const range = dates();
-  try { const data = await request(null, `?start=${range[0]}&end=${range.at(-1)}`); if (sequence === loadSequence && epoch === writeEpoch) paint(data); return sequence === loadSequence && epoch === writeEpoch; }
+  try { const data = await request(null, `?start=${range[0]}&end=${range.at(-1)}&comment_date=${selectedDate}`); if (sequence === loadSequence && epoch === writeEpoch) paint(data); return sequence === loadSequence && epoch === writeEpoch; }
   catch (error) { if (sequence === loadSequence) $('status').textContent = `同期できません：${error.message}`; return false; }
   finally { polling = false; }
 }
@@ -290,4 +305,55 @@ $('import-submit').onclick = async () => {
   } finally { writeEpoch++; importBusy = false; setMode(); sync(); }
 };
 window.addEventListener('beforeunload', event => { if (unsaved()) { event.preventDefault(); event.returnValue = ''; } });
+
+function buildWeeks() {
+  $('week-picker').replaceChildren();
+  calendarWeeks(dates()).forEach((week, index) => {
+    const button = document.createElement('button'); button.type = 'button';
+    button.textContent = `${index + 1}週`; button.dataset.start = week[0];
+    button.setAttribute('aria-label', `${index + 1}週 ${week[0]} 〜 ${week.at(-1)}`);
+    button.onclick = () => selectDay(week[0]); $('week-picker').append(button);
+  });
+}
+function showWeek(date) {
+  const week = calendarWeeks(dates()).find(week => week.includes(date));
+  $('week-heading').textContent = `${week[0]} 〜 ${week.at(-1)}`;
+  for (const button of $('week-picker').children) button.setAttribute('aria-pressed', String(button.dataset.start === week[0]));
+  for (const [date, day] of dayButtons) day.button.classList.toggle('outside-week', !week.includes(date));
+}
+function renderComments() {
+  const comments = commentsByDate.get(selectedDate) ?? [];
+  $('comments-title').textContent = `${selectedDate} のコメント`;
+  $('comment-list').replaceChildren(); $('comment-empty').hidden = comments.length > 0;
+  $('comment-empty').textContent = commentsByDate.has(selectedDate) ? 'まだコメントはありません。' : 'コメントを読み込み中…';
+  for (const comment of comments) {
+    const li = document.createElement('li'), meta = document.createElement('p'), content = document.createElement('p');
+    meta.className = 'meta'; meta.textContent = `${comment.editor_name} · ${formatTime(comment.created_at)}`;
+    content.className = 'comment-content'; content.textContent = comment.content;
+    li.append(meta, content); $('comment-list').append(li);
+  }
+}
+$('comment-content').addEventListener('input', () => {
+  commentId = null; commentAttempt = null; $('comment-message').textContent = $('comment-content').value ? '未送信' : '';
+});
+$('comment-content').addEventListener('compositionstart', () => { commentComposing = true; });
+$('comment-content').addEventListener('compositionend', () => { commentComposing = false; });
+$('comment-form').onsubmit = async event => {
+  event.preventDefault(); if (commentBusy || commentComposing || importBusy || !authenticated) return;
+  const content = $('comment-content').value;
+  try { textLimit(content, 3000, 'コメント', true); } catch (error) { $('comment-message').textContent = error.message; return; }
+  commentId ??= crypto.randomUUID();
+  commentAttempt ??= { action: 'add_comment', editor_name: editor, entry_date: selectedDate, id: commentId, content };
+  commentBusy = true; writeEpoch++; setMode(); $('comment-message').textContent = '投稿中…';
+  try {
+    const result = await request(commentAttempt);
+    const comments = commentsByDate.get(selectedDate) ?? [];
+    if (!comments.some(comment => comment.id === result.comment.id)) comments.push(result.comment);
+    comments.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+    commentsByDate.set(selectedDate, comments); renderComments();
+    $('comment-content').value = ''; commentId = null; commentAttempt = null; $('comment-message').textContent = '投稿しました。';
+  } catch (error) { $('comment-message').textContent = `${error.message} 入力を保持しています。「投稿する」で再試行できます。`; if (error.status === 401) authExpired(); }
+  finally { commentBusy = false; writeEpoch++; setMode(); }
+};
+
 buildMonth(); sync(); setInterval(() => sync(), 3000);

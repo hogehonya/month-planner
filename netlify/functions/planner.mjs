@@ -75,6 +75,8 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'sh
         let dates;
         try { dates = dateRange(url.searchParams.get('start'), url.searchParams.get('end')); }
         catch (e) { throw error(400, e.message); }
+        const commentDate = url.searchParams.get('comment_date');
+        if (commentDate !== null && !dates.includes(commentDate)) throw error(400, 'コメントの日付は表示期間内で指定してください。');
         const store = openStore();
         const keys = [BASE_KEY, ...dates.map(date => `entries/${date}.json`)];
         const snapshots = await Promise.all(keys.map(key => store.getWithMetadata(key, { type: 'json' })));
@@ -88,9 +90,15 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'sh
         const recorded = await Promise.all(latestKeys.map(key => store.get(key, { type: 'json' })));
         const history = [...new Map([...recorded.filter(Boolean), ...pending].map(event => [event.id, event])).values()]
           .sort((a, b) => b.changed_at.localeCompare(a.changed_at) || b.id.localeCompare(a.id)).slice(0, 30);
+        const comments = new Map(await Promise.all((commentDate === null ? [] : [commentDate]).map(async date => {
+          const { blobs } = await store.list({ prefix: `comments/${date}/` });
+          const rows = (await Promise.all(blobs.map(blob => store.get(blob.key, { type: 'json' })))).filter(Boolean);
+          rows.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+          return [date, rows];
+        })));
         const freshBase = await store.getWithMetadata(BASE_KEY, { type: 'json' });
         const base = freshBase?.data?.base ?? DEFAULT_BASE;
-        return json({ entries: dates.map((date, i) => effectiveEntry(date, snapshots[i + 1]?.data, base)), history, history_saved: historySaved, base, base_etag: freshBase?.etag ?? null });
+        return json({ entries: dates.map((date, i) => ({ ...effectiveEntry(date, snapshots[i + 1]?.data, base), ...(comments.has(date) ? { comments: comments.get(date) } : {}) })), history, history_saved: historySaved, base, base_etag: freshBase?.etag ?? null });
       }
       if (request.method !== 'POST') return json({ error: 'GETまたはPOSTを使用してください。' }, 405);
       if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) throw error(403, 'このページから操作してください。');
@@ -107,6 +115,23 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'sh
       catch (e) { throw error(400, e.message); }
       if (body.action === 'base') throw error(403, '取り込んだ時間割は変更できません。');
       const store = openStore();
+      if (body.action === 'add_comment') {
+        let content;
+        try {
+          parseDate(body.entry_date);
+          if (typeof body.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.id)) throw new Error('投稿IDを確認してください。');
+          content = textLimit(body.content, 3000, 'コメント', true);
+        } catch (e) { throw error(400, e.message); }
+        const key = `comments/${body.entry_date}/${body.id.toLowerCase()}.json`;
+        const comment = { id: body.id.toLowerCase(), entry_date: body.entry_date, editor_name: editor, content, created_at: new Date().toISOString() };
+        const result = await store.setJSON(key, comment, { onlyIfNew: true });
+        if (!result.modified) {
+          const saved = await store.get(key, { type: 'json' });
+          if (!saved || saved.content !== content || saved.editor_name !== editor) throw error(409, '投稿IDが重複しています。投稿内容を確認してください。');
+          return json({ ok: true, comment: saved });
+        }
+        return json({ ok: true, comment });
+      }
       if (body.action === 'import_entries') {
         let entries;
         try { entries = validateImport({ entries: body.entries }); } catch (e) { throw error(400, e.message); }
