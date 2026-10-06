@@ -309,6 +309,8 @@ window.addEventListener('beforeunload', event => { if (unsaved()) { event.preven
 
 function buildWeeks() {
   $('week-picker').replaceChildren();
+  $('week-picker').hidden = view !== 'month';
+  if (view !== 'month') return;
   calendarWeekWindows(dates()).forEach((week, index) => {
     const button = document.createElement('button'); button.type = 'button';
     button.textContent = `${index + 1}週`; button.dataset.start = week[0];
@@ -317,7 +319,7 @@ function buildWeeks() {
   });
 }
 function showWeek(date) {
-  const windows = calendarWeekWindows(dates());
+  const windows = view === 'month' ? calendarWeekWindows(dates()) : [dates()];
   const week = windows.find(week => week[0] === activeWeekStart && week.includes(date))
     ?? windows.findLast(week => week.includes(date));
   activeWeekStart = week[0];
