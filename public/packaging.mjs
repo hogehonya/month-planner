@@ -20,7 +20,7 @@ function render() {
     for (const sku of skus) {
       const card = node('article'); card.className = 'sku-card'; card.append(node('h3', sku.name));
       const list = node('dl');
-      for (const [label,value] of [['SKU ID',sku.id],['品種・種類',sku.type || '未確認']]) list.append(node('dt',label),node('dd',value));
+      for (const [label,value] of [['SKU ID',sku.id],['品種・種類',sku.type || '未確認'],['栽培方法',({organic:'有機',conventional:'慣行'})[sku.cultivation_method] || '未確認'],['価格',sku.price_yen == null ? '未確認' : `${sku.price_yen.toLocaleString('ja-JP')}円`],['荷姿条件',sku.packaging_condition || '未確認']]) list.append(node('dt',label),node('dd',value));
       card.append(list);
       if (sku.photo_id) { const img = node('img'); img.src = `${endpoint}?photo=${encodeURIComponent(sku.photo_id)}`; img.alt = `${item.name}・${sku.name}の荷姿写真`; img.loading = 'lazy'; card.append(img); }
       else card.append(node('p','写真未登録'));
@@ -40,6 +40,7 @@ function open(item,sku = null) {
   editing = { item,sku }; $('sku-form').reset(); $('item-name').value = item.name;
   $('sku-id').value = sku?.id ?? ''; $('sku-id').readOnly = !!sku;
   $('sku-name').value = sku?.name ?? ''; $('sku-type').value = sku?.type ?? ''; $('sku-note').value = sku?.note ?? '';
+  $('sku-cultivation').value = sku?.cultivation_method ?? 'unknown'; $('sku-price').value = sku?.price_yen ?? ''; $('sku-condition').value = sku?.packaging_condition ?? '';
   $('sku-title').textContent = `${item.name}のSKU${sku ? '編集' : '追加'}`; $('form-status').textContent = ''; $('sku-dialog').showModal();
 }
 $('filter').addEventListener('change',render); $('reload').addEventListener('click',load);
@@ -56,7 +57,7 @@ $('sku-form').addEventListener('submit',async event=> {
       const base64 = await new Promise((resolve,reject)=> { const reader = new FileReader(); reader.onload = ()=>resolve(reader.result.split(',')[1]); reader.onerror = ()=>reject(new Error('写真を読み込めませんでした。')); reader.readAsDataURL(file); });
       photo = { type:file.type,data:base64 };
     }
-    await api({ action:'save_sku',item_id:editing.item.id,id:$('sku-id').value,name:$('sku-name').value,type:$('sku-type').value,note:$('sku-note').value,etag:editing.sku?.etag ?? null,photo });
+    await api({ action:'save_sku',item_id:editing.item.id,id:$('sku-id').value,name:$('sku-name').value,type:$('sku-type').value,note:$('sku-note').value,cultivation_method:$('sku-cultivation').value,price_yen:$('sku-price').value.trim() === '' ? null : Number($('sku-price').value),packaging_condition:$('sku-condition').value,etag:editing.sku?.etag ?? null,photo });
     $('sku-dialog').close(); await load(); $('status').textContent = '保存しました。';
   } catch(e) { $('form-status').textContent = `${e.message} 入力は保持しています。`; }
   finally { busy = false; $('save').disabled = false; $('cancel').disabled = false; }

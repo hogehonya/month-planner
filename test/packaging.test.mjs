@@ -44,3 +44,26 @@ test('写真の過大・偽形式・SVGを保存しない',async()=> {
   for (const photo of [{type:'image/png',data:Buffer.from('fake').toString('base64')},{type:'image/svg+xml',data:Buffer.from('<svg/>').toString('base64')},{type:'image/png',data:'!!!'}]) assert.ok([400,415].includes((await post({photo})).status));
   assert.equal(data.size,0);
 });
+
+test('任意SKU項目を共有保存し、未入力価格と0円を区別する', async () => {
+  const {post,get} = setup();
+  assert.equal((await post({})).status,200);
+  const blank = (await (await get()).json()).skus[0];
+  assert.equal(blank.cultivation_method,'unknown'); assert.equal(blank.price_yen,null); assert.equal(blank.packaging_condition,'');
+  assert.equal((await post({etag:blank.etag,cultivation_method:'organic',price_yen:0,packaging_condition:'袋に2本'})).status,200);
+  const saved = (await (await get()).json()).skus[0];
+  assert.equal(saved.cultivation_method,'organic'); assert.equal(saved.price_yen,0); assert.equal(saved.packaging_condition,'袋に2本');
+  assert.equal((await post({etag:saved.etag,note:'通常の編集'})).status,200);
+  const preserved = (await (await get()).json()).skus[0];
+  assert.equal(preserved.cultivation_method,'organic'); assert.equal(preserved.price_yen,0); assert.equal(preserved.packaging_condition,'袋に2本');
+  assert.equal((await post({etag:preserved.etag,cultivation_method:'conventional',price_yen:null,packaging_condition:''})).status,200);
+  const cleared = (await (await get()).json()).skus[0];
+  assert.equal(cleared.cultivation_method,'conventional'); assert.equal(cleared.price_yen,null); assert.equal(cleared.packaging_condition,'');
+});
+test('栽培方法・価格・荷姿条件の不正な値を拒否する', async () => {
+  const {post,data} = setup();
+  for (const patch of [{cultivation_method:'other'},{price_yen:''},{price_yen:'100'},{price_yen:-1},{price_yen:1.5},{price_yen:Number.MAX_SAFE_INTEGER+1},{packaging_condition:42},{packaging_condition:'x'.repeat(3001)}]) {
+    assert.equal((await post(patch)).status,400);
+  }
+  assert.equal(data.size,0);
+});

@@ -52,6 +52,9 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'pa
       const store = openStore(), key = `skus/${row.item_id}/${row.id}.json`;
       const current = await store.getWithMetadata(key, { type: 'json' });
       if (current && (!current.etag || body.etag !== current.etag) || !current && body.etag != null) throw fail(409, '保存内容が変わりました。再読込して確認してください。');
+      for (const field of ['cultivation_method', 'price_yen', 'packaging_condition']) {
+        if (!Object.hasOwn(body, field) && current && Object.hasOwn(current.data, field)) row[field] = current.data[field];
+      }
       row.photo_id = current?.data.photo_id ?? null;
       if (photo) { row.photo_id = randomUUID(); await store.set(`photos/${row.photo_id}`, photo, { metadata: { type: body.photo.type } }); }
       row.updated_at = new Date().toISOString();
