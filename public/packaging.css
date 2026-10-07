@@ -27,3 +27,22 @@
 .menu-confirmations{border:1px solid var(--line);border-radius:6px;padding:.5rem;margin:.5rem 0}.menu-confirmations legend{font-weight:600}.menu-confirmations label{display:flex;align-items:center;gap:.5rem;min-height:44px}.menu-confirmations input{width:22px;min-height:22px;height:22px;margin:0}.menu-row-decision{font-size:.875rem;font-weight:600;margin:.25rem 0}
 
 .menu-cultivation-select{width:auto!important;min-height:44px;font:inherit;font-weight:600;background:transparent;color:inherit;border:0;max-width:100%;padding:.25rem}.cultivation-badge small{font-size:.75rem;font-weight:400}.cultivation-badge{flex-wrap:wrap}
+
+/* 一覧カード：区分・品目・品種、数量、状態と補助操作をまとめる。 */
+#menu-rows[data-layout=card]>.menu-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;align-content:start}
+#menu-rows[data-layout=card] .menu-row-identity{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.35rem .5rem;align-items:center}
+#menu-rows[data-layout=card] .menu-row-identity>h3,#menu-rows[data-layout=card] .menu-row-info,#menu-rows[data-layout=card] .menu-card-tags{grid-column:1/-1;margin:0}
+#menu-rows[data-layout=card] .menu-row-identity>h3{font-size:1rem}
+#menu-rows[data-layout=card] .menu-card-tags{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.35rem .5rem;align-items:baseline}
+#menu-rows[data-layout=card] .cultivation-badge{grid-column:1/-1;justify-self:start}
+#menu-rows[data-layout=card] .menu-card-tags>.menu-item-name,#menu-rows[data-layout=card] .menu-card-tags>.menu-variety{background:transparent;border:0;border-radius:0;padding:0;font-size:1rem}
+#menu-rows[data-layout=card] .menu-item-name{font-weight:600}
+#menu-rows[data-layout=card] .menu-row-decision{grid-column:1;grid-row:4;margin:0}
+#menu-rows[data-layout=card] .menu-detail-link{grid-column:2;grid-row:4;margin:0;min-height:44px}
+#menu-rows[data-layout=card] .menu-row-fields{grid-column:1/3;grid-template-columns:repeat(2,minmax(0,1fr));gap:.5rem}
+#menu-rows[data-layout=card] .menu-row-fields input{padding:.5rem;font-variant-numeric:tabular-nums}
+#menu-rows[data-layout=card] .menu-row-state{grid-column:3;margin:0;font-variant-numeric:tabular-nums}
+#menu-rows[data-layout=card] .menu-remaining-label{display:block}
+#menu-rows[data-layout=card] .menu-remaining-value{display:flex;align-items:center;min-height:44px;margin-top:6px;padding:.5rem;border:1px solid var(--line);border-radius:4px;background:var(--surface);word-break:keep-all;overflow-wrap:anywhere}
+#menu-rows[data-layout=card] .menu-remaining-done{display:block;margin-top:.25rem;font-size:.875rem;white-space:nowrap}
+#menu-rows[data-layout=card] .menu-row-detail{grid-column:1/-1;margin:0}

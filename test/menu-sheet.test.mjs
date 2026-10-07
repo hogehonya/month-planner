@@ -5,11 +5,13 @@ import { setupMenu, visibleMenuRows } from '../public/menu-sheet.mjs';
 const row = {item_id:'item-14',sku_id:'real-001',price_yen:100,planned_quantity:10,prepared_quantity:null,status_bits:0};
 class Element {
   constructor(tag='') {this.tag=tag;this.children=[];this.listeners={};this.value='';this.dataset={};}
+  get textContent(){return (this.ownText ?? '')+this.children.map(child=>child.textContent ?? '').join('');}
+  set textContent(value){this.ownText=value;this.children=[];}
   append(...children){for(const child of children){this.children=this.children.filter(existing=>existing!==child);this.children.push(child);}}
   click(){this.listeners.click?.();}
   focus(){this.focused=true;}
   setAttribute(name,value){this[name]=value;}
-  replaceChildren(...children){this.children=children;}
+  replaceChildren(...children){this.ownText='';this.children=children;}
   addEventListener(name,fn){this.listeners[name]=fn;}
   setCustomValidity(value){this.validation=value;}
   reportValidity(){return !this.validation && this.children.every(child=>child.reportValidity());}
@@ -112,7 +114,7 @@ test('全件未入力の数量・金額は0合計と表示しない',()=> {
 
 test('おしながきに対応SKUの写真を表示し、未登録から編集できる',()=> {
   const ui=setup(), card=ui.get('menu-rows').children[0];
-  assert.equal(find(card,child=>child.className==='menu-card-tags').children[0].textContent,'ダイコン');
+  assert.equal(find(card,child=>child.className==='menu-card-tags').children[1].textContent,'ダイコン');
   const media=find(card,child=>child.className==='menu-row-photo');
   assert.equal(media.children[0].textContent,'写真未登録');
   media.children[1].listeners.click();
@@ -199,16 +201,17 @@ test('残りは有効数量のみ計算し、未入力・不正値を未確認�
 });
 
 
-test('閉じた絞り込みsummaryに件数を表示し、商品名にある品種を重複しない',()=> {
+test('閉じた絞り込みsummaryに件数を表示し、品種を荷姿と区別する',()=> {
  const ui=setup();
  ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>sku.id==='real-001'?{...sku,name:'大根 青首 慣行',type:'青首',packaging_condition:'2本袋'}:sku)});
  assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-row-info').textContent,'2本袋');
+ assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-variety').textContent,'品種・種類 青首');
  assert.match(ui.get('menu-filter-summary').textContent,/1\/1件/);
  ui.get('menu-price-tags').children.find(button=>button.textContent==='200〜500円').listeners.click();
  assert.match(ui.get('menu-filter-summary').textContent,/0\/1件/);assert.equal(ui.get('menu-no-match').hidden,false);
  ui.get('menu-clear-filters').listeners.click();
  ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>sku.id==='real-001'?{...sku,type:'青首',packaging_condition:'2本袋'}:sku)});
- assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-row-info').textContent,'青首 ／ 2本袋');
+ assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-row-info').textContent,'2本袋');
 });
 
 
@@ -402,4 +405,34 @@ test('栽培変更後も未送信コメントと不正数量を保持し、日�
  assert.equal(ui.menu.canLeave(),false);assert.match(ui.get('sku-comment-message').textContent,/未送信/);
  ui.menu.receive(ui.source);assert.equal(inputIn(card,1),planned);assert.equal(content.value,'未送信の連絡');
  await ui.get('sku-comment-submit').listeners.click();assert.equal(ui.requests.at(-1).action,'add_sku_comment');assert.equal(content.value,'');assert.equal(planned.value,'1.5');
+});
+
+
+test('カードは区分・品目・品種の順に識別し、SKU名と長い荷姿を保持する',()=> {
+ const ui=setup();
+ const condition='長い荷姿説明を切り捨てず一覧で確認できるように袋・本数・梱包条件をそのまま表示する';
+ ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,cultivation_method:'organic',type:'青首',name:'販売用SKUの名前',packaging_condition:condition}))});
+ const card=ui.get('menu-rows').children[0], identity=find(card,el=>el.className==='menu-row-identity');
+ const tags=identity.children[0];
+ assert.equal(tags.className,'menu-card-tags');
+ assert.equal(tags.children[0].dataset.cultivation,'organic');
+ assert.equal(tags.children[1].textContent,'ダイコン');
+ assert.equal(tags.children[2].textContent,'品種・種類 青首');
+ assert.equal(identity.children[1].textContent,'販売用SKUの名前');
+ assert.equal(find(card,el=>el.className==='menu-row-info').textContent,condition);
+ ui.menu.receive(ui.source);
+ assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-variety').textContent,'品種・種類 未確認');
+});
+
+
+test('残りはラベルと数量を分け、未確認・完了と表の読み上げ文字列を維持する',()=> {
+ const ui=setup(), remaining=state(ui);
+ assert.equal(remaining.children[0].textContent,'残り ');
+ assert.equal(remaining.children[1].textContent,'未確認');
+ const prepared=input(ui,2);prepared.value='10';prepared.listeners.input();
+ assert.equal(remaining.children[1].textContent,'0');
+ assert.equal(remaining.children[2].textContent,'・準備完了');
+ assert.equal(remaining.textContent,'残り 0・準備完了');
+ ui.get('menu-layout-table').listeners.click();
+ assert.equal(remaining.role,'cell');assert.equal(remaining.textContent,'残り 0・準備完了');
 });
