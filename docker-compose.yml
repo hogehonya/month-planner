@@ -33,8 +33,7 @@ services:
       test:
         - CMD
         - node
-        - -e
-        - fetch('http://127.0.0.1:'+process.env.PORT+'/healthz',{headers:{Host:new URL(process.env.APP_ORIGIN).host}}).then(async r=>{const h=await r.json();if(!r.ok||!h.ok||h.revision!==process.env.APP_REVISION)process.exit(1)}).catch(()=>process.exit(1))
+        - local-runtime/healthcheck.mjs
       interval: 10s
       timeout: 5s
       start_period: 10s

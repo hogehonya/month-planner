@@ -44,9 +44,7 @@ steps:
       - printf '%s' "$${GITEA_TOKEN}" | docker login gitea.honya.dev --username "$${GITEA_USERNAME}" --password-stdin
       - docker compose --project-name month-planner --project-directory /home/honya/month-planner --env-file /home/honya/month-planner/config.env --env-file /run/infisical/month-planner/secrets.env pull
       - docker compose --project-name month-planner --project-directory /home/honya/month-planner --env-file /home/honya/month-planner/config.env --env-file /run/infisical/month-planner/secrets.env up -d --wait --wait-timeout 90
-      - >-
-        docker exec month-planner node -e
-        "fetch('http://127.0.0.1:3000/healthz',{headers:{Host:new URL(process.env.APP_ORIGIN).host}}).then(async r=>{const h=await r.json();if(!r.ok||!h.ok||h.revision!=='${CI_COMMIT_SHA}')process.exit(1);console.log('Healthy revision '+h.revision)}).catch(()=>process.exit(1))"
+      - docker exec month-planner node local-runtime/healthcheck.mjs '${CI_COMMIT_SHA}'
     when:
       - branch: main
         event: [push, manual]
