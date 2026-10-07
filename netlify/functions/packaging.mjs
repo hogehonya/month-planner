@@ -41,7 +41,7 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'pa
         const { blobs } = await store.list({ prefix: 'skus/' });
         const skus = (await Promise.all(blobs.map(async ({ key }) => { const row = await store.getWithMetadata(key, { type: 'json' }); return row ? { ...row.data, etag: row.etag } : null; }))).filter(Boolean);
         const sheetKeys = await store.list({prefix:'menu-sheets/'});
-        const sheets = (await Promise.all(sheetKeys.blobs.map(async ({key})=> { const saved = await store.getWithMetadata(key,{type:'json'}); return saved ? {...saved.data,etag:saved.etag} : null; }))).filter(Boolean).sort((a,b)=>a.date.localeCompare(b.date));
+        const sheets = (await Promise.all(sheetKeys.blobs.map(async ({key})=> { const saved = await store.getWithMetadata(key,{type:'json'}); return saved ? {...saved.data,rows:saved.data.rows.map(row=>({...row,status_bits:row.status_bits ?? 0})),etag:saved.etag} : null; }))).filter(Boolean).sort((a,b)=>a.date.localeCompare(b.date));
         return json({ items: ITEMS, skus, sheets });
       }
       if (request.method !== 'POST') throw fail(405, 'GETまたはPOSTを使用してください。');
@@ -53,6 +53,7 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'pa
         const store = openStore(), key = `menu-sheets/${sheet.date}.json`;
         const references = await Promise.all(sheet.rows.map(row=>store.getWithMetadata(`skus/${row.item_id}/${row.sku_id}.json`,{type:'json'})));
         if (references.some(saved=>!saved)) throw fail(400,'登録済みのSKUを選んでください。');
+        if (sheet.rows.some((row,index)=>row.status_bits & 1 && !references[index].data.packaging_condition?.trim())) throw fail(400,'未入力の荷姿は確定できません。');
         const current = await store.getWithMetadata(key,{type:'json'});
         if (current && (!current.etag || body.etag !== current.etag) || !current && body.etag != null) throw fail(409,'販売準備表が変更されました。最新状態を確認して保存をやり直してください。');
         const result = await store.setJSON(key,sheet,current ? {onlyIfMatch:current.etag} : {onlyIfNew:true});
