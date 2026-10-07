@@ -4,7 +4,7 @@ import { summarizeSheet, validateSheet } from '../public/packaging-model.mjs';
 import { setupMenu, visibleMenuRows } from '../public/menu-sheet.mjs';
 const row = {item_id:'item-14',sku_id:'real-001',price_yen:100,planned_quantity:10,prepared_quantity:null};
 class Element {
-  constructor(tag='') {this.tag=tag;this.children=[];this.listeners={};this.value='';}
+  constructor(tag='') {this.tag=tag;this.children=[];this.listeners={};this.value='';this.dataset={};}
   append(...children){for(const child of children){this.children=this.children.filter(existing=>existing!==child);this.children.push(child);}}
   setAttribute(name,value){this[name]=value;}
   replaceChildren(...children){this.children=children;}
@@ -31,7 +31,10 @@ function setup(failure=null) {
   return {get,menu,requests,edits,setFailure:value=>{saveFailure=value;},source};
 }
 const submit=()=>({preventDefault(){}});
-const input=(ui,index)=>ui.get('menu-rows').children[0].children[2].children[index].children[0];
+const find=(el,predicate)=>predicate(el) ? el : el.children.map(child=>find(child,predicate)).find(Boolean);
+const inputIn=(card,index)=>find(card,el=>el.dataset.field===['price_yen','planned_quantity','prepared_quantity'][index]);
+const input=(ui,index)=>inputIn(ui.get('menu-rows').children[0],index);
+const state=ui=>find(ui.get('menu-rows').children[0],el=>el.className==='menu-row-state');
 
 test('数量と売価はnullと0を分け、安全整数を超える合計も正確に表示する',()=> {
   const summary=summarizeSheet([row,{...row,planned_quantity:0,prepared_quantity:0,price_yen:null}]);
@@ -61,10 +64,10 @@ test('日付追加はSKU・単価をコピーし数量を空欄へ戻す。重�
 
 test('数量編集で完了状態・小計を表示、失敗・日付切替・再読込で入力を保持する',async()=> {
   const ui=setup(500), prepared=input(ui,2);
-  assert.equal(ui.get('menu-rows').children[0].children[3].textContent,'数量未入力');
+  assert.equal(state(ui).textContent,'残り 未確認');
   prepared.value='12';prepared.listeners.input();
-  assert.equal(ui.get('menu-rows').children[0].children[3].textContent,'準備完了');
-  assert.match(ui.get('menu-summary').children[3].textContent,/1,200円/);
+  assert.equal(state(ui).textContent,'残り 0・準備完了');
+  assert.match(ui.get('menu-amount-summary').children[1].textContent,/1,200円/);
   ui.get('menu-date').value='2026-10-18';ui.get('menu-date').listeners.change();
   assert.equal(ui.get('menu-date').value,'2026-10-17');assert.equal(ui.menu.canLeave(),false);
   ui.menu.receive(ui.source);assert.equal(input(ui,2).value,'12');
@@ -96,8 +99,8 @@ test('無効な数量を入力中のSKU追加を拒否し、値と検証エラ�
 
 test('全件未入力の数量・金額は0合計と表示しない',()=> {
   const ui=setup();
-  assert.equal(ui.get('menu-summary').children[1].textContent,'準備数: 未入力（1件）');
-  assert.equal(ui.get('menu-summary').children[3].textContent,'準備済み売価: 未入力（1件）');
+  assert.equal(ui.get('menu-summary').children[1].textContent,'準備済み: 未入力（1件）');
+  assert.equal(ui.get('menu-amount-summary').children[1].textContent,'準備済み売価: 未入力（1件）');
   assert.match(ui.get('menu-summary').children[0].textContent,/10/);
 });
 
@@ -105,12 +108,12 @@ test('全件未入力の数量・金額は0合計と表示しない',()=> {
 test('おしながきに対応SKUの写真を表示し、未登録から編集できる',()=> {
   const ui=setup(), card=ui.get('menu-rows').children[0];
   assert.equal(card.children.find(child=>child.className==='menu-card-tags').children[0].textContent,'ダイコン');
-  const media=card.children.find(child=>child.className==='menu-row-photo');
+  const media=find(card,child=>child.className==='menu-row-photo');
   assert.equal(media.children[0].textContent,'写真未登録');
   media.children[1].listeners.click();
   assert.equal(ui.edits[0].sku.id,'real-001'); assert.equal(ui.edits[0].item.id,'item-14');
   ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,photo_id:sku.id==='real-001'?'real-photo':'sample-photo'}))});
-  const updated=ui.get('menu-rows').children[0].children.find(child=>child.className==='menu-row-photo');
+  const updated=find(ui.get('menu-rows').children[0],child=>child.className==='menu-row-photo');
   assert.equal(updated.children[0].src,'/.netlify/functions/packaging?photo=real-photo');
   assert.match(updated.children[0].alt,/ダイコン.*大根/); assert.equal(updated.children[0].loading,'lazy');
   assert.equal(updated.children[1].textContent,'写真を変更');
@@ -123,7 +126,7 @@ test('写真更新は未保存の単価・数量原文と不正値を保持し�
   ui.menu.receive(next);
   assert.equal(input(ui,1),planned);assert.equal(planned.value,'1.5');assert.ok(planned.validation);
   assert.equal(price.value,'00150');assert.equal(prepared.value,'012');assert.equal(ui.requests.length,0);
-  const media=ui.get('menu-rows').children[0].children.find(child=>child.className==='menu-row-photo');
+  const media=find(ui.get('menu-rows').children[0],child=>child.className==='menu-row-photo');
   assert.match(media.children[0].src,/new-photo/);
   assert.equal(ui.menu.canLeave(),false);
   planned.value='11';planned.listeners.input();
@@ -150,12 +153,12 @@ test('絞り込み・ソートは無効入力と数量原文を保持し、非�
   const other={...row,item_id:'item-01',sku_id:'sample',price_yen:500,planned_quantity:null};
   const source={...ui.source,items:[...ui.source.items,{id:'item-01',name:'タマネギ'}],sheets:[{date:'2026-10-17',rows:[{...row,price_yen:200},other],etag:'v1'}]};
   ui.menu.receive(source);
-  const first=ui.get('menu-rows').children[0], planned=first.children[2].children[1].children[0], price=first.children[2].children[0].children[0];
+  const first=ui.get('menu-rows').children[0], planned=inputIn(first,1), price=inputIn(first,0);
   planned.value='1.5';planned.listeners.input();price.value='00200';price.listeners.input();
   const tag=ui.get('menu-item-tags').children.find(button=>button.textContent==='タマネギ');tag.listeners.click();
   assert.equal(first.hidden,true);assert.equal(planned.value,'1.5');assert.ok(planned.validation);assert.equal(price.value,'00200');
   ui.get('menu-sort').value='price-desc';ui.get('menu-sort').listeners.change();
-  assert.equal(first.children[2].children[1].children[0],planned);
+  assert.equal(inputIn(first,1),planned);
   ui.get('menu-clear-filters').listeners.click();assert.equal(first.hidden,false);
   planned.value='11';planned.listeners.input();
   const range=ui.get('menu-price-tags').children.find(button=>button.textContent==='200〜500円');range.listeners.click();
@@ -172,4 +175,20 @@ test('品目ソートは日本語名・同値元順を使い、予定数nullは�
   const rows=[{...row,sku_id:'a',item_id:'item-01',planned_quantity:null},{...row,sku_id:'b',planned_quantity:20},{...row,sku_id:'c',planned_quantity:20}];
   assert.deepEqual(visibleMenuRows(rows,[],[{id:'item-01',name:'タマネギ'},{id:'item-14',name:'ダイコン'}],filters,'item').map(row=>row.sku_id),['b','c','a']);
   assert.deepEqual(visibleMenuRows(rows,[],[],filters,'planned-desc').map(row=>row.sku_id),['b','c','a']);
+});
+
+
+test('残りは有効数量のみ計算し、未入力・不正値を未確認、詳細のinvalid時は開いて保持する',()=> {
+ const ui=setup(), needed=input(ui,1), prepared=input(ui,2), price=input(ui,0);
+ const detail=find(ui.get('menu-rows').children[0],el=>el.tag==='details');
+ assert.ok(!detail.open);prepared.value='3';prepared.listeners.input();assert.equal(state(ui).textContent,'残り 7');
+ prepared.value='1.5';prepared.listeners.input();assert.equal(state(ui).textContent,'残り 未確認');
+ prepared.value='12';prepared.listeners.input();assert.equal(state(ui).textContent,'残り 0・準備完了');
+ needed.value='';needed.listeners.input();assert.equal(state(ui).textContent,'残り 未確認');
+ price.value='1.5';price.listeners.input();
+ ui.get('menu-price-tags').children.find(button=>button.textContent==='200〜500円').listeners.click();
+ assert.equal(ui.get('menu-rows').children[0].hidden,true);
+ ui.get('menu-form').listeners.invalid({target:price});
+ assert.equal(ui.get('menu-rows').children[0].hidden,false);
+ assert.equal(detail.open,true);assert.equal(price.value,'1.5');assert.ok(price.validation);
 });
