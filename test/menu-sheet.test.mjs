@@ -19,10 +19,12 @@ function setup(failure=null,view=null) {
   const get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
   let sheets=[{date:'2026-10-17',rows:[{...row}],etag:'v1'}];
   let saveFailure=failure;
-  const api=async body=>{
+  const api=async (body,query)=>{
+    if (query) return {comments:[]};
     if (!body) return {sheets};
     requests.push(body);
     if(saveFailure)throw Object.assign(new Error('保存失敗'),{status:saveFailure});
+    if(body.action==='add_sku_comment')return {comment:{id:body.comment_id,content:body.content,created_at:'2026-10-08T00:00:00Z'}};
     const sheet={date:body.date,rows:body.rows,etag:'v2'};
     sheets=[...sheets.filter(s=>s.date!==body.date),sheet];return {ok:true,sheet};
   };
@@ -288,6 +290,19 @@ test('区分は商品名から推測せず、未確認と編集後の区分を�
 });
 
 
+test('詳細コメントのdraftは戻る・別SKU・日付切替・再読込で保持し、数量編集とは独立する',async()=> {
+ const ui=setup();ui.menu.receive({...ui.source,sheets:[{date:'2026-10-17',etag:'v1',rows:[{...row},{...row,item_id:'item-01',sku_id:'sample'}]}]});
+ const first=ui.get('menu-rows').children[0],second=ui.get('menu-rows').children[1];
+ find(first,el=>el.className==='menu-detail-link').click();
+ const content=ui.get('sku-comment-content');content.value='共有する連絡';content.listeners.input();
+ ui.get('menu-detail-back').click();assert.equal(ui.get('menu-detail-view').hidden,false);
+ find(second,el=>el.className==='menu-detail-link').click();assert.equal(ui.get('menu-detail-title').textContent,'大根');
+ ui.get('menu-date').value='2026-10-18';ui.get('menu-date').listeners.change();assert.equal(ui.get('menu-date').value,'2026-10-17');
+ assert.equal(ui.menu.canLeave(),false);ui.menu.receive(ui.source);assert.equal(content.value,'共有する連絡');
+ const planned=inputIn(first,1);planned.value='12';planned.listeners.input();assert.equal(planned.value,'12');assert.equal(content.value,'共有する連絡');
+ content.value='';content.listeners.input();ui.get('menu-detail-back').click();assert.equal(ui.get('menu-detail-view').hidden,true);assert.equal(planned.value,'12');
+});
+
 test('確定は明示操作のみで0値を許可し、入力変更で対応bit解除・写真は独立する',async()=> {
  const ui=setup();ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>sku.id==='real-001'?{...sku,packaging_condition:'2本袋'}:sku)});
  const card=ui.get('menu-rows').children[0],check=bit=>find(card,el=>el.dataset.bit===String(bit));
@@ -342,4 +357,16 @@ test('出荷なしは元値を保持して合計から除外し、解除で戻�
  check.checked=false;check.listeners.change();assert.match(ui.get('menu-summary').children[0].textContent,/10/);
  check.checked=true;check.listeners.change();await ui.get('menu-form').listeners.submit(submit());
  assert.equal(ui.requests[0].rows[0].status_bits,16);assert.equal(ui.requests[0].rows[0].planned_quantity,10);assert.equal(ui.requests[0].rows[0].price_yen,100);
+});
+
+
+test('コメント追記は編集中の確定・出荷なし・数量入力を保存せず保持する',async()=>{
+ const ui=setup();find(ui.get('menu-rows').children[0],el=>el.className==='menu-detail-link').click();
+ const card=ui.get('menu-detail-row').children[0],price=inputIn(card,0),check=bit=>find(card,el=>el.dataset.bit===String(bit));
+ check(2).checked=true;check(2).listeners.change();check(16).checked=true;check(16).listeners.change();
+ price.value='00100';
+ const content=ui.get('sku-comment-content');content.value='出荷の連絡';content.listeners.input();
+ await ui.get('sku-comment-submit').listeners.click();
+ assert.equal(ui.requests.length,1);assert.equal(ui.requests[0].action,'add_sku_comment');assert.equal(price.value,'00100');assert.equal(check(2).checked,true);assert.equal(check(16).checked,true);
+ await ui.get('menu-form').listeners.submit(submit());assert.equal(ui.requests[1].action,'save_sheet');assert.equal(ui.requests[1].rows[0].status_bits,18);
 });

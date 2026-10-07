@@ -20,3 +20,5 @@
 - `/packaging.html`: 販売準備表・荷姿写真マスタ（`packaging.mjs`、`menu-sheet.mjs`、`packaging-model.mjs`、`packaging.css`）。`/.netlify/functions/packaging` で日付別販売準備表・共通SKU・写真を読み書き。
 
 - `/packaging.html#sku=品目ID%2FSKU_ID`: 販売準備表の独立詳細ビュー。同じフォームの入力を保持し、一覧へ戻る／ブラウザ履歴で復帰。
+
+SKU詳細の共有コメントは `public/sku-comments.mjs` が表示・追記・再試行・未送信入力の保護を担当します。包装APIの選択日・品目・SKU専用取得と投稿を使用し、販売準備表・写真とは独立して保存します。
