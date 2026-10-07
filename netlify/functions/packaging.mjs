@@ -1,6 +1,7 @@
 import { getStore } from '@netlify/blobs';
 import { randomUUID } from 'node:crypto';
 import { ITEMS, PHOTO_LIMIT, validateSKU, validateSheet } from '../../public/packaging-model.mjs';
+import { parseDate, textLimit } from '../../public/model.mjs';
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 async function readBody(request) {
@@ -26,12 +27,27 @@ function photoData(photo) {
   if (!valid) throw fail(415, 'JPEG・PNG・WebPの写真を選んでください。');
   return data;
 }
+async function commentTarget(store, body) {
+  try {
+    parseDate(body.date);
+    if (!ITEMS.some(item=>item.id === body.item_id) || typeof body.sku_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(body.sku_id)) throw new Error('SKUを確認してください。');
+  } catch(e) { throw fail(400,e.message); }
+  if (!await store.getWithMetadata(`skus/${body.item_id}/${body.sku_id}.json`,{type:'json'})) throw fail(400,'登録済みのSKUを選んでください。');
+  return `sku-comments/${body.date}/${body.item_id}/${body.sku_id}/`;
+}
 export function createHandler({ getStore: openStore = () => getStore({ name: 'packaging-master', consistency: 'strong' }) } = {}) {
   return async request => {
     try {
       const url = new URL(request.url);
       if (request.method === 'GET') {
         const store = openStore(), photo = url.searchParams.get('photo');
+        if (url.searchParams.has('comments')) {
+          const prefix = await commentTarget(store,Object.fromEntries(url.searchParams));
+          const {blobs} = await store.list({prefix});
+          const comments = (await Promise.all(blobs.map(async ({key})=>(await store.getWithMetadata(key,{type:'json'}))?.data))).filter(Boolean);
+          comments.sort((a,b)=>a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+          return json({comments});
+        }
         if (photo !== null) {
           if (!/^[0-9a-f-]{36}$/.test(photo)) throw fail(400, '写真IDを確認してください。');
           const saved = await store.getWithMetadata(`photos/${photo}`, { type: 'arrayBuffer' });
@@ -48,6 +64,23 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'pa
       if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) throw fail(403, 'このページから操作してください。');
       if (request.headers.get('Content-Type')?.split(';')[0].trim() !== 'application/json') throw fail(415, 'application/jsonを指定してください。');
       const body = await readBody(request);
+      if (body.action === 'add_sku_comment') {
+        const store = openStore(), prefix = await commentTarget(store,body);
+        let content;
+        try {
+          content = textLimit(body.content,3000,'コメント',true);
+          if (typeof body.comment_id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.comment_id)) throw new Error('投稿IDを確認してください。');
+        } catch(e) { throw fail(400,e.message); }
+        const comment = {id:body.comment_id.toLowerCase(),content,created_at:new Date().toISOString()};
+        const key = prefix+comment.id+'.json';
+        const result = await store.setJSON(key,comment,{onlyIfNew:true});
+        if (!result.modified) {
+          const saved = (await store.getWithMetadata(key,{type:'json'}))?.data;
+          if (!saved || saved.content !== content) throw fail(409,'投稿IDが重複しています。内容を確認してください。');
+          return json({ok:true,comment:saved});
+        }
+        return json({ok:true,comment});
+      }
       if (body.action === 'save_sheet') {
         let sheet; try { sheet = validateSheet(body); } catch(e) { throw fail(400,e.message); }
         const store = openStore(), key = `menu-sheets/${sheet.date}.json`;

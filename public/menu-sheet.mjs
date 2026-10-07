@@ -1,3 +1,4 @@
+import { setupSKUComments } from './sku-comments.mjs';
 import { summarizeSheet } from './packaging-model.mjs';
 const cloneRows = rows=>rows.map(row=>({...row}));
 const numberValue = input=>input.value.trim() === '' ? null : Number(input.value);
@@ -23,11 +24,18 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
   const $ = id=>document.getElementById(id);
   const node = (tag,text)=> { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; };
   let source = {items:[],skus:[],sheets:[]}, selected = '', rows = [], etag = null, dirty = false, busy = false, conflict = false;
+  const comments = setupSKUComments(document,api);
   const cards = new Map(), filters = {item:new Set(),cultivation:new Set(),price:new Set()};
   let sort = 'registered', layout = 'card', detailKey = null, detailOrigin = null;
   const view = document.defaultView;
   const rowKey = row=>`${row.item_id}/${row.sku_id}`;
   function showDetail(key,focus = true) {
+    const next = cards.has(key) ? key : null;
+    const row = next ? cards.get(next).row : null;
+    if (!comments.show(row ? {date:selected,item_id:row.item_id,sku_id:row.sku_id} : null)) {
+      if (view) view.history.replaceState(view.history.state,'',detailKey ? `#sku=${encodeURIComponent(detailKey)}` : view.location.pathname+view.location.search);
+      return false;
+    }
     if (detailKey && cards.has(detailKey)) { const previous = cards.get(detailKey); previous.detail.open = previous.wasOpen; previous.link.hidden = false; $('menu-rows').append(previous.card); }
     detailKey = cards.has(key) ? key : null;
     $('menu-detail-view').hidden = !detailKey;
@@ -47,6 +55,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
       if (focus) detailOrigin?.focus?.();
     }
     applyLayout();
+    return true;
   }
   function routeDetail() {
     const hash = view?.location.hash ?? '';
@@ -55,11 +64,13 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     showDetail(key);
   }
   function openDetail(key,link) {
+    if (!comments.canLeave()) return;
     detailOrigin = link;
     if (view) { view.history.pushState({menuDetail:true},'',`#sku=${encodeURIComponent(key)}`); }
     showDetail(key);
   }
   $('menu-detail-back').addEventListener('click',()=> {
+    if (!comments.canLeave()) return;
     if (view?.history.state?.menuDetail) view.history.back();
     else { if (view) view.history.replaceState(null,'',view.location.pathname+view.location.search); showDetail(null); }
   });
@@ -105,7 +116,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     }
   }
   const status = text=> { $('menu-status').textContent = text; };
-  const canLeave = ()=> { if (dirty || busy) { status('未保存の販売準備表があります。保存してから移動・再読込してください。'); return false; } return true; };
+  const canLeave = ()=> { if (!comments.canLeave()) return false; if (dirty || busy) { status('未保存の販売準備表があります。保存してから移動・再読込してください。'); return false; } return true; };
   const skuName = row=>source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id)?.name ?? row.sku_id;
   function controls() {
     $('menu-save').disabled = !selected || busy || conflict;
@@ -215,7 +226,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
   }
   function receive(next) {
     source = {...next,sheets:next.sheets ?? []};
-    if (dirty || busy) {
+    if (dirty || busy || comments.pending()) {
       for (const row of rows) { const refs = cards.get(`${row.item_id}/${row.sku_id}`); if (refs) updateCard(row,refs); }
       return;
     }

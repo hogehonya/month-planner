@@ -19,7 +19,8 @@ function setup(failure=null,view=null) {
   const get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
   let sheets=[{date:'2026-10-17',rows:[{...row}],etag:'v1'}];
   let saveFailure=failure;
-  const api=async body=>{
+  const api=async (body,query)=>{
+    if (query) return {comments:[]};
     if (!body) return {sheets};
     requests.push(body);
     if(saveFailure)throw Object.assign(new Error('保存失敗'),{status:saveFailure});
@@ -285,4 +286,18 @@ test('区分は商品名から推測せず、未確認と編集後の区分を�
   assert.equal(badge.dataset.cultivation,expected);assert.equal(badge.children[0]['aria-hidden'],'true');
   assert.equal(inputIn(card,1),planned);assert.equal(planned.value,'1.5');
  }
+});
+
+
+test('詳細コメントのdraftは戻る・別SKU・日付切替・再読込で保持し、数量編集とは独立する',async()=> {
+ const ui=setup();ui.menu.receive({...ui.source,sheets:[{date:'2026-10-17',etag:'v1',rows:[{...row},{...row,item_id:'item-01',sku_id:'sample'}]}]});
+ const first=ui.get('menu-rows').children[0],second=ui.get('menu-rows').children[1];
+ find(first,el=>el.className==='menu-detail-link').click();
+ const content=ui.get('sku-comment-content');content.value='共有する連絡';content.listeners.input();
+ ui.get('menu-detail-back').click();assert.equal(ui.get('menu-detail-view').hidden,false);
+ find(second,el=>el.className==='menu-detail-link').click();assert.equal(ui.get('menu-detail-title').textContent,'大根');
+ ui.get('menu-date').value='2026-10-18';ui.get('menu-date').listeners.change();assert.equal(ui.get('menu-date').value,'2026-10-17');
+ assert.equal(ui.menu.canLeave(),false);ui.menu.receive(ui.source);assert.equal(content.value,'共有する連絡');
+ const planned=inputIn(first,1);planned.value='12';planned.listeners.input();assert.equal(planned.value,'12');assert.equal(content.value,'共有する連絡');
+ content.value='';content.listeners.input();ui.get('menu-detail-back').click();assert.equal(ui.get('menu-detail-view').hidden,true);assert.equal(planned.value,'12');
 });
