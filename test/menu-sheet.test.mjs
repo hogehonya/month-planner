@@ -5,11 +5,13 @@ import { setupMenu, visibleMenuRows } from '../public/menu-sheet.mjs';
 const row = {item_id:'item-14',sku_id:'real-001',price_yen:100,planned_quantity:10,prepared_quantity:null,status_bits:0};
 class Element {
   constructor(tag='') {this.tag=tag;this.children=[];this.listeners={};this.value='';this.dataset={};}
+  get textContent(){return (this.ownText ?? '')+this.children.map(child=>child.textContent ?? '').join('');}
+  set textContent(value){this.ownText=value;this.children=[];}
   append(...children){for(const child of children){this.children=this.children.filter(existing=>existing!==child);this.children.push(child);}}
   click(){this.listeners.click?.();}
   focus(){this.focused=true;}
   setAttribute(name,value){this[name]=value;}
-  replaceChildren(...children){this.children=children;}
+  replaceChildren(...children){this.ownText='';this.children=children;}
   addEventListener(name,fn){this.listeners[name]=fn;}
   setCustomValidity(value){this.validation=value;}
   reportValidity(){return !this.validation && this.children.every(child=>child.reportValidity());}
@@ -19,10 +21,13 @@ function setup(failure=null,view=null) {
   const get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
   let sheets=[{date:'2026-10-17',rows:[{...row}],etag:'v1'}];
   let saveFailure=failure;
-  const api=async body=>{
-    if (!body) return {sheets};
+  const api=async (body,query)=>{
+    if (query) return {comments:[]};
+    if (!body) return {...source,sheets};
     requests.push(body);
     if(saveFailure)throw Object.assign(new Error('保存失敗'),{status:saveFailure});
+    if(body.action==='save_sku') { source.skus=source.skus.map(sku=>sku.id===body.id&&sku.item_id===body.item_id?{...sku,cultivation_method:body.cultivation_method,etag:'sku-v2'}:sku);return {ok:true}; }
+    if(body.action==='add_sku_comment')return {comment:{id:body.comment_id,content:body.content,created_at:'2026-10-08T00:00:00Z'}};
     const sheet={date:body.date,rows:body.rows,etag:'v2'};
     sheets=[...sheets.filter(s=>s.date!==body.date),sheet];return {ok:true,sheet};
   };
@@ -109,7 +114,7 @@ test('全件未入力の数量・金額は0合計と表示しない',()=> {
 
 test('おしながきに対応SKUの写真を表示し、未登録から編集できる',()=> {
   const ui=setup(), card=ui.get('menu-rows').children[0];
-  assert.equal(find(card,child=>child.className==='menu-card-tags').children[0].textContent,'ダイコン');
+  assert.equal(find(card,child=>child.className==='menu-card-tags').children[1].textContent,'ダイコン');
   const media=find(card,child=>child.className==='menu-row-photo');
   assert.equal(media.children[0].textContent,'写真未登録');
   media.children[1].listeners.click();
@@ -196,16 +201,17 @@ test('残りは有効数量のみ計算し、未入力・不正値を未確認�
 });
 
 
-test('閉じた絞り込みsummaryに件数を表示し、商品名にある品種を重複しない',()=> {
+test('閉じた絞り込みsummaryに件数を表示し、品種を荷姿と区別する',()=> {
  const ui=setup();
  ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>sku.id==='real-001'?{...sku,name:'大根 青首 慣行',type:'青首',packaging_condition:'2本袋'}:sku)});
  assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-row-info').textContent,'2本袋');
+ assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-variety').textContent,'品種・種類 青首');
  assert.match(ui.get('menu-filter-summary').textContent,/1\/1件/);
  ui.get('menu-price-tags').children.find(button=>button.textContent==='200〜500円').listeners.click();
  assert.match(ui.get('menu-filter-summary').textContent,/0\/1件/);assert.equal(ui.get('menu-no-match').hidden,false);
  ui.get('menu-clear-filters').listeners.click();
  ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>sku.id==='real-001'?{...sku,type:'青首',packaging_condition:'2本袋'}:sku)});
- assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-row-info').textContent,'青首 ／ 2本袋');
+ assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-row-info').textContent,'2本袋');
 });
 
 
@@ -288,6 +294,19 @@ test('区分は商品名から推測せず、未確認と編集後の区分を�
 });
 
 
+test('詳細コメントのdraftは戻る・別SKU・日付切替・再読込で保持し、数量編集とは独立する',async()=> {
+ const ui=setup();ui.menu.receive({...ui.source,sheets:[{date:'2026-10-17',etag:'v1',rows:[{...row},{...row,item_id:'item-01',sku_id:'sample'}]}]});
+ const first=ui.get('menu-rows').children[0],second=ui.get('menu-rows').children[1];
+ find(first,el=>el.className==='menu-detail-link').click();
+ const content=ui.get('sku-comment-content');content.value='共有する連絡';content.listeners.input();
+ ui.get('menu-detail-back').click();assert.equal(ui.get('menu-detail-view').hidden,false);
+ find(second,el=>el.className==='menu-detail-link').click();assert.equal(ui.get('menu-detail-title').textContent,'大根');
+ ui.get('menu-date').value='2026-10-18';ui.get('menu-date').listeners.change();assert.equal(ui.get('menu-date').value,'2026-10-17');
+ assert.equal(ui.menu.canLeave(),false);ui.menu.receive(ui.source);assert.equal(content.value,'共有する連絡');
+ const planned=inputIn(first,1);planned.value='12';planned.listeners.input();assert.equal(planned.value,'12');assert.equal(content.value,'共有する連絡');
+ content.value='';content.listeners.input();ui.get('menu-detail-back').click();assert.equal(ui.get('menu-detail-view').hidden,true);assert.equal(planned.value,'12');
+});
+
 test('確定は明示操作のみで0値を許可し、入力変更で対応bit解除・写真は独立する',async()=> {
  const ui=setup();ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>sku.id==='real-001'?{...sku,packaging_condition:'2本袋'}:sku)});
  const card=ui.get('menu-rows').children[0],check=bit=>find(card,el=>el.dataset.bit===String(bit));
@@ -342,4 +361,78 @@ test('出荷なしは元値を保持して合計から除外し、解除で戻�
  check.checked=false;check.listeners.change();assert.match(ui.get('menu-summary').children[0].textContent,/10/);
  check.checked=true;check.listeners.change();await ui.get('menu-form').listeners.submit(submit());
  assert.equal(ui.requests[0].rows[0].status_bits,16);assert.equal(ui.requests[0].rows[0].planned_quantity,10);assert.equal(ui.requests[0].rows[0].price_yen,100);
+});
+
+
+test('一覧の栽培変更はSKUだけETag保存し、不正数量・確定と表示行を保持する',async()=> {
+ const ui=setup();ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,etag:'sku-v1',type:'品種',note:'備考',cultivation_method:'organic',photo_id:'photo'})),sheets:[{date:'2026-10-17',rows:[{...row,status_bits:2}],etag:'v1'}]});
+ const card=ui.get('menu-rows').children[0],planned=inputIn(card,1);planned.value='1.5';planned.listeners.input();
+ ui.get('menu-cultivation-tabs').children.find(tab=>tab.textContent==='有機').click();
+ const select=find(card,el=>el.className==='menu-cultivation-select');select.value='conventional';
+ await select.listeners.change();
+ assert.equal(ui.requests.length,1);assert.equal(ui.requests[0].action,'save_sku');assert.equal(ui.requests[0].etag,'sku-v1');
+ assert.equal(ui.requests[0].cultivation_method,'conventional');assert.equal(ui.requests[0].type,'品種');assert.equal(ui.requests[0].note,'備考');
+ assert.equal(ui.requests[0].photo,null);assert.equal(find(card,el=>el.dataset.bit==='2').checked,true);assert.equal(card.dataset.cultivation,'conventional');assert.equal(card.hidden,false);
+ assert.equal(inputIn(card,1),planned);assert.equal(planned.value,'1.5');assert.ok(planned.validation);
+ assert.match(ui.get('menu-status').textContent,/全日付共通/);
+});
+
+test('一覧栽培の保存失敗・競合は元区分へ戻し、再試行できる',async()=> {
+ const ui=setup(409),card=ui.get('menu-rows').children[0],select=find(card,el=>el.className==='menu-cultivation-select');
+ select.value='organic';await select.listeners.change();
+ assert.equal(select.value,'unknown');assert.equal(select.disabled,false);assert.equal(card.dataset.cultivation,'unknown');
+ assert.match(ui.get('menu-status').textContent,/入力は保持/);assert.equal(ui.requests.length,1);
+ ui.setFailure(null);select.value='organic';await select.listeners.change();assert.equal(card.dataset.cultivation,'organic');
+});
+
+test('コメント追記は編集中の確定・出荷なし・数量入力を保存せず保持する',async()=>{
+ const ui=setup();find(ui.get('menu-rows').children[0],el=>el.className==='menu-detail-link').click();
+ const card=ui.get('menu-detail-row').children[0],price=inputIn(card,0),check=bit=>find(card,el=>el.dataset.bit===String(bit));
+ check(2).checked=true;check(2).listeners.change();check(16).checked=true;check(16).listeners.change();
+ price.value='00100';
+ const content=ui.get('sku-comment-content');content.value='出荷の連絡';content.listeners.input();
+ await ui.get('sku-comment-submit').listeners.click();
+ assert.equal(ui.requests.length,1);assert.equal(ui.requests[0].action,'add_sku_comment');assert.equal(price.value,'00100');assert.equal(check(2).checked,true);assert.equal(check(16).checked,true);
+ await ui.get('menu-form').listeners.submit(submit());assert.equal(ui.requests[1].action,'save_sheet');assert.equal(ui.requests[1].rows[0].status_bits,18);
+});
+
+test('栽培変更後も未送信コメントと不正数量を保持し、日付移動・再受信を防ぐ',async()=> {
+ const ui=setup();find(ui.get('menu-rows').children[0],el=>el.className==='menu-detail-link').click();
+ const card=ui.get('menu-detail-row').children[0],planned=inputIn(card,1),content=ui.get('sku-comment-content');
+ planned.value='1.5';planned.listeners.input();content.value='未送信の連絡';content.listeners.input();
+ const select=find(card,el=>el.className==='menu-cultivation-select');select.value='organic';await select.listeners.change();
+ assert.equal(content.value,'未送信の連絡');assert.equal(inputIn(card,1),planned);assert.equal(planned.value,'1.5');assert.ok(planned.validation);
+ assert.equal(ui.menu.canLeave(),false);assert.match(ui.get('sku-comment-message').textContent,/未送信/);
+ ui.menu.receive(ui.source);assert.equal(inputIn(card,1),planned);assert.equal(content.value,'未送信の連絡');
+ await ui.get('sku-comment-submit').listeners.click();assert.equal(ui.requests.at(-1).action,'add_sku_comment');assert.equal(content.value,'');assert.equal(planned.value,'1.5');
+});
+
+
+test('カードは区分・品目・品種の順に識別し、SKU名と長い荷姿を保持する',()=> {
+ const ui=setup();
+ const condition='長い荷姿説明を切り捨てず一覧で確認できるように袋・本数・梱包条件をそのまま表示する';
+ ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,cultivation_method:'organic',type:'青首',name:'販売用SKUの名前',packaging_condition:condition}))});
+ const card=ui.get('menu-rows').children[0], identity=find(card,el=>el.className==='menu-row-identity');
+ const tags=identity.children[0];
+ assert.equal(tags.className,'menu-card-tags');
+ assert.equal(tags.children[0].dataset.cultivation,'organic');
+ assert.equal(tags.children[1].textContent,'ダイコン');
+ assert.equal(tags.children[2].textContent,'品種・種類 青首');
+ assert.equal(identity.children[1].textContent,'販売用SKUの名前');
+ assert.equal(find(card,el=>el.className==='menu-row-info').textContent,condition);
+ ui.menu.receive(ui.source);
+ assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-variety').textContent,'品種・種類 未確認');
+});
+
+
+test('残りはラベルと数量を分け、未確認・完了と表の読み上げ文字列を維持する',()=> {
+ const ui=setup(), remaining=state(ui);
+ assert.equal(remaining.children[0].textContent,'残り ');
+ assert.equal(remaining.children[1].textContent,'未確認');
+ const prepared=input(ui,2);prepared.value='10';prepared.listeners.input();
+ assert.equal(remaining.children[1].textContent,'0');
+ assert.equal(remaining.children[2].textContent,'・準備完了');
+ assert.equal(remaining.textContent,'残り 0・準備完了');
+ ui.get('menu-layout-table').listeners.click();
+ assert.equal(remaining.role,'cell');assert.equal(remaining.textContent,'残り 0・準備完了');
 });

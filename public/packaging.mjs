@@ -3,13 +3,13 @@ import { setupMenu } from './menu-sheet.mjs';
 const $ = id => document.getElementById(id), endpoint = '/.netlify/functions/packaging';
 let data = { items: [], skus: [] }, editing = null, busy = false;
 function node(tag, text) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; }
-async function api(body) {
-  const response = await fetch(endpoint, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+async function api(body,query = '') {
+  const response = await fetch(endpoint+query, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
   const result = await response.json();
   if (!response.ok) throw Object.assign(new Error(result.error || '通信に失敗しました。'),{status:response.status});
   return result;
 }
-const menu = setupMenu(document,api,(item,sku)=>open(item,sku));
+const menu = setupMenu(document,api,(item,sku)=>open(item,sku),next=> { data = next; render(); });
 function render() {
   const selected = $('filter').value;
   $('items').replaceChildren();

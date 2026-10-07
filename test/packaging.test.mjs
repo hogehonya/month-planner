@@ -116,6 +116,30 @@ test('日付・参照・数量・単価・重複行の不正値はおしなが�
 });
 
 
+test('SKUコメントは日付とSKUごとに独立し、再試行は追記を重複させず既存SKUを保持する',async()=> {
+ const {post,get,data}=setup(); await post({});
+ const before=structuredClone([...data]);
+ const body={action:'add_sku_comment',date:'2026-10-17',item_id:'item-14',sku_id:'real-001',comment_id:'12345678-1234-4234-8234-123456789012',content:'<img src=x onerror=alert(1)>連絡'};
+ assert.equal((await post(body)).status,200); assert.equal((await post(body)).status,200);
+ assert.equal((await post({...body,content:'変更'})).status,409);
+ const result=await (await get('?comments=1&date=2026-10-17&item_id=item-14&sku_id=real-001')).json();
+ assert.equal(result.comments.length,1);assert.equal(result.comments[0].content,body.content);assert.ok(result.comments[0].created_at);
+ assert.deepEqual(data.get(before[0][0]),before[0][1]);
+ assert.deepEqual((await (await get('?comments=1&date=2026-10-18&item_id=item-14&sku_id=real-001')).json()).comments,[]);
+ for(const patch of [{date:'2026-02-30'},{sku_id:'missing'},{sku_id:'../bad'},{comment_id:'../bad'},{content:' '},{content:'文'.repeat(3001)},{content:42}]) assert.equal((await post({...body,...patch})).status,400);
+});
+
+
+test('SKUコメントは別SKUと同時追記を混ぜず、公開GETは不正参照を拒否する',async()=>{
+ const {post,get}=setup();await post({});await post({id:'real-002'});
+ const common={action:'add_sku_comment',date:'2026-10-17',item_id:'item-14',sku_id:'real-001',comment_id:'12345678-1234-4234-8234-123456789012',content:'ひとつ目'};
+ const responses=await Promise.all([post(common),post({...common,comment_id:'12345678-1234-4234-8234-123456789013',content:'ふたつ目'}),post({...common,sku_id:'real-002',content:'別SKU'})]);assert.ok(responses.every(response=>response.status===200));
+ assert.equal((await (await get('?comments=1&date=2026-10-17&item_id=item-14&sku_id=real-001')).json()).comments.length,2);
+ const other=await (await get('?comments=1&date=2026-10-17&item_id=item-14&sku_id=real-002')).json();assert.equal(other.comments.length,1);assert.equal(other.comments[0].content,'別SKU');
+ assert.equal((await get('?comments=1&date=2026-02-30&item_id=item-14&sku_id=real-001')).status,400);
+ assert.equal((await get('?comments=1&date=2026-10-17&item_id=item-14&sku_id=missing')).status,400);
+});
+
 test('日付の確定bitsは既知値だけ確定でき、写真bitを拒否し保存再取得する',async()=> {
  const {post,get,handler}=setup();await post({packaging_condition:'2本袋'});
  const row={item_id:'item-14',sku_id:'real-001',price_yen:0,planned_quantity:0,prepared_quantity:null,status_bits:7};
@@ -146,4 +170,14 @@ test('出荷なし16は未入力値も保持して保存再取得でき、写真
  assert.equal((await save([row])).status,200);
  assert.deepEqual((await (await get()).json()).sheets[0].rows[0],row);
  assert.equal(Object.hasOwn((await (await get()).json()).sheets[0].rows[0],'decision_bits'),false);
+});
+
+
+test('SKUコメント追記は確定・出荷なしを含む日付表を変更しない',async()=>{
+ const {post,data}=setup();await post({packaging_condition:'袋'});
+ const rows=[{item_id:'item-14',sku_id:'real-001',price_yen:100,planned_quantity:10,prepared_quantity:3,status_bits:23}];
+ assert.equal((await post({action:'save_sheet',date:'2026-10-17',rows,etag:null})).status,200);
+ const before=structuredClone(data.get('menu-sheets/2026-10-17.json'));
+ assert.equal((await post({action:'add_sku_comment',date:'2026-10-17',item_id:'item-14',sku_id:'real-001',comment_id:'12345678-1234-4234-8234-123456789012',content:'連絡'})).status,200);
+ assert.deepEqual(data.get('menu-sheets/2026-10-17.json'),before);
 });
