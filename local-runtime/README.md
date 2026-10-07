@@ -19,7 +19,7 @@ Node.js 22.12以上で `npm ci` 後に `npm start` を実行します。設定�
 
 ## 永続化とコンテナ
 
-Dockerfileは非rootのnodeユーザーで起動し、`/app/data` を永続ボリュームにします。bind mountする場合はUID/GID 1000が書ける専用ディレクトリを用意します。コンテナの再作成時に同じボリュームを接続します。ソースやpublicのディレクトリを保存先にしません。APP_ORIGINとAPP_REVISION、必要なEDIT_PINはデプロイ環境から渡します。healthcheckはローカルHTTPの`/healthz`を利用します。
+Dockerfileは非rootのnodeユーザーで起動し、`/app/data` を永続ボリュームにします。bind mountする場合はUID/GID 1000が書ける専用ディレクトリを用意します。コンテナの再作成時に同じボリュームを接続します。ソースやpublicのディレクトリを保存先にしません。APP_ORIGINとAPP_REVISION、必要なEDIT_PINはデプロイ環境から渡します。healthcheckは`node local-runtime/healthcheck.mjs [期待するrevision]`でローカルHTTPの`/healthz`を確認します。NodeのHTTPクライアントでAPP_ORIGINのHostを明示し、HTTP 200・ok・revisionの一致を検証します。revision引数を省略した場合はAPP_REVISIONを使い、4秒以内に完了しない場合は失敗します。Docker・Compose・CIで同じスクリプトを使います。
 
 保存領域は `shared-planner` と `packaging-master` に分離します。キーはSHA-256のファイル名へ変換し、内容・メタデータ・ETagを一つのレコードに格納します。写真はバイト列をbase64で格納します。新規フォルダは0700、レコードは0600です。書き込みは同一ディレクトリ内の一時ファイルへの書込・fsync・atomic rename・ディレクトリfsyncを行います。途中終了で残った `.tmp` は読み取り・一覧から除外します。
 

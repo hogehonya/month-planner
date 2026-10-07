@@ -102,3 +102,5 @@ Issue #72（2026-10-08、ユーザー「カードのレイアウト修正して�
 同じソースをNode HTTPサーバーと永続ディスクで実行できます。Netlifyとデータを同期・コピーせず、独立した空ストアで開始します。実行設定・コンテナ・保存とバックアップの条件は[LAN実行環境](local-runtime/README.md)を参照してください。`npm start` で起動し、`/healthz` は稼働状態と `APP_REVISION` を返します。
 
 LAN配置のCI・デプロイ手順は[LANデプロイ](docs/local-deployment.md)を参照してください。コンテナの `APP_REVISION` はビルド引数で設定でき、実行時の環境変数でも指定できます。
+
+Docker・Compose・CIは共通の`local-runtime/healthcheck.mjs`で正規Hostとrevisionを検証します。ローカルHTTPへのHost指定にはNodeのHTTPクライアントを使用します。

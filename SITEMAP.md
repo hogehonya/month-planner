@@ -24,6 +24,8 @@
 SKU詳細の共有コメントは `public/sku-comments.mjs` が表示・追記・再試行・未送信入力の保護を担当します。包装APIの選択日・品目・SKU専用取得と投稿を使用し、販売準備表・写真とは独立して保存します。
 
 - `local-runtime/server.mjs`: LAN配置用の静的配信・既存API接続・`/healthz`。
+- `local-runtime/healthcheck.mjs`: Docker・Compose・CI共通のHTTP healthcheck。正規Host・応答・revisionを検証。
+- `test/local-healthcheck.test.mjs`: 別プロセスから実HTTPサーバーへのhealthcheck回帰テスト。
 - `local-runtime/store.mjs`: 独立した永続ディスクストア。運用条件は `local-runtime/README.md`。
 - `Dockerfile`: 非rootのLANコンテナ。`/app/data` を永続化。
 - `docs/local-deployment.md`: LAN版のCI・デプロイ運用。
