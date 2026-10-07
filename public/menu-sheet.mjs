@@ -207,7 +207,14 @@ export function setupMenu(document,api,editSKU = ()=>{},onSKUChanged = ()=>{}) {
       const decision = node('p'); decision.className = 'menu-row-decision'; identity.append(decision);
       const refs = {title,info,media,tags,card,detail,condition,link,row,decision,checks:[],cells:[identity,detail],inputs:[]}; cards.set(`${row.item_id}/${row.sku_id}`,refs); updateCard(row,refs);
       const state = node('p'); state.className = 'menu-row-state';
-      const updateState = ()=> { state.textContent = row.planned_quantity === null || row.prepared_quantity === null ? '残り 未確認' : row.prepared_quantity >= row.planned_quantity ? '残り 0・準備完了' : `残り ${row.planned_quantity-row.prepared_quantity}`; };
+      const updateState = ()=> {
+        const unknown = row.planned_quantity === null || row.prepared_quantity === null;
+        const complete = !unknown && row.prepared_quantity >= row.planned_quantity;
+        const label = node('span','残り '); label.className = 'menu-remaining-label';
+        const value = node('span',unknown ? '未確認' : String(Math.max(0,row.planned_quantity-row.prepared_quantity))); value.className = 'menu-remaining-value';
+        state.replaceChildren(label,value);
+        if (complete) { const done = node('span','・準備完了'); done.className = 'menu-remaining-done'; state.append(done); }
+      };
       const fields = node('div'); fields.className = 'menu-row-fields';
       for (const [key,label] of [['price_yen','単価（円）'],['planned_quantity','必要数'],['prepared_quantity','準備済み']]) {
         const wrapper = node('label',label), input = node('input'); input.dataset.field = key; refs.inputs.push(input); input.type = 'number'; input.min = '0'; input.step = '1'; input.max = String(Number.MAX_SAFE_INTEGER); input.value = row[key] === null ? '' : String(row[key]); input.disabled = busy;

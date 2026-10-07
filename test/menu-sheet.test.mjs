@@ -5,11 +5,13 @@ import { setupMenu, visibleMenuRows } from '../public/menu-sheet.mjs';
 const row = {item_id:'item-14',sku_id:'real-001',price_yen:100,planned_quantity:10,prepared_quantity:null,status_bits:0};
 class Element {
   constructor(tag='') {this.tag=tag;this.children=[];this.listeners={};this.value='';this.dataset={};}
+  get textContent(){return (this.ownText ?? '')+this.children.map(child=>child.textContent ?? '').join('');}
+  set textContent(value){this.ownText=value;this.children=[];}
   append(...children){for(const child of children){this.children=this.children.filter(existing=>existing!==child);this.children.push(child);}}
   click(){this.listeners.click?.();}
   focus(){this.focused=true;}
   setAttribute(name,value){this[name]=value;}
-  replaceChildren(...children){this.children=children;}
+  replaceChildren(...children){this.ownText='';this.children=children;}
   addEventListener(name,fn){this.listeners[name]=fn;}
   setCustomValidity(value){this.validation=value;}
   reportValidity(){return !this.validation && this.children.every(child=>child.reportValidity());}
@@ -420,4 +422,17 @@ test('カードは区分・品目・品種の順に識別し、SKU名と長い�
  assert.equal(find(card,el=>el.className==='menu-row-info').textContent,condition);
  ui.menu.receive(ui.source);
  assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-variety').textContent,'品種・種類 未確認');
+});
+
+
+test('残りはラベルと数量を分け、未確認・完了と表の読み上げ文字列を維持する',()=> {
+ const ui=setup(), remaining=state(ui);
+ assert.equal(remaining.children[0].textContent,'残り ');
+ assert.equal(remaining.children[1].textContent,'未確認');
+ const prepared=input(ui,2);prepared.value='10';prepared.listeners.input();
+ assert.equal(remaining.children[1].textContent,'0');
+ assert.equal(remaining.children[2].textContent,'・準備完了');
+ assert.equal(remaining.textContent,'残り 0・準備完了');
+ ui.get('menu-layout-table').listeners.click();
+ assert.equal(remaining.role,'cell');assert.equal(remaining.textContent,'残り 0・準備完了');
 });
