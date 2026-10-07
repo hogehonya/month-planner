@@ -24,7 +24,80 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
   const node = (tag,text)=> { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; };
   let source = {items:[],skus:[],sheets:[]}, selected = '', rows = [], etag = null, dirty = false, busy = false, conflict = false;
   const cards = new Map(), filters = {item:new Set(),cultivation:new Set(),price:new Set()};
-  let sort = 'registered';
+  let sort = 'registered', layout = 'card', detailKey = null, detailOrigin = null;
+  const view = document.defaultView;
+  const rowKey = row=>`${row.item_id}/${row.sku_id}`;
+  function showDetail(key,focus = true) {
+    if (detailKey && cards.has(detailKey)) { const previous = cards.get(detailKey); previous.detail.open = previous.wasOpen; previous.link.hidden = false; $('menu-rows').append(previous.card); }
+    detailKey = cards.has(key) ? key : null;
+    $('menu-detail-view').hidden = !detailKey;
+    $('menu-master').hidden = Boolean(detailKey);
+    $('menu-list-controls').hidden = Boolean(detailKey);
+    $('menu-panel').hidden = Boolean(detailKey);
+    if (detailKey) {
+      const refs = cards.get(detailKey);
+      refs.card.hidden = false; refs.wasOpen = refs.detail.open; refs.detail.open = true;
+      $('menu-detail-row').append(refs.card);
+      $('menu-detail-title').textContent = refs.title.textContent;
+      refs.link.hidden = true;
+      if (focus) $('menu-detail-title').focus?.();
+    } else {
+      for (const refs of cards.values()) refs.link.hidden = false;
+      applyView();
+      if (focus) detailOrigin?.focus?.();
+    }
+    applyLayout();
+  }
+  function routeDetail() {
+    const hash = view?.location.hash ?? '';
+    let key = null;
+    if (hash.startsWith('#sku=')) { try { key = decodeURIComponent(hash.slice(5)); } catch {} }
+    showDetail(key);
+  }
+  function openDetail(key,link) {
+    detailOrigin = link;
+    if (view) { view.history.pushState({menuDetail:true},'',`#sku=${encodeURIComponent(key)}`); }
+    showDetail(key);
+  }
+  $('menu-detail-back').addEventListener('click',()=> {
+    if (view?.history.state?.menuDetail) view.history.back();
+    else { if (view) view.history.replaceState(null,'',view.location.pathname+view.location.search); showDetail(null); }
+  });
+  view?.addEventListener('popstate',routeDetail);
+  view?.addEventListener('hashchange',routeDetail);
+  for (const mode of ['table','card']) $('menu-layout-'+mode).addEventListener('click',()=> {
+    layout = mode; applyLayout();
+    for (const value of ['table','card']) $('menu-layout-'+value).setAttribute('aria-pressed',String(value === mode));
+  });
+  function applyLayout() {
+    const table = layout === 'table';
+    $('menu-rows').dataset.layout = layout;
+    $('menu-table').setAttribute('role',table ? 'table' : 'presentation');
+    $('menu-table').setAttribute('aria-label','販売準備表');
+    $('menu-table-head').hidden = !table;
+    $('menu-table-head').setAttribute('role','row');
+    $('menu-rows').setAttribute('role',table ? 'rowgroup' : 'presentation');
+    for (const refs of cards.values()) {
+      const inTable = table && rowKey(refs.row) !== detailKey;
+      refs.card.setAttribute('role',inTable ? 'row' : 'article');
+      for (const cell of refs.cells) cell.setAttribute('role',inTable ? 'cell' : 'presentation');
+    }
+  }
+  function renderTabs() {
+    const container = $('menu-cultivation-tabs'); container.replaceChildren();
+    for (const [key,label] of [['','全件'],['organic','有機'],['conventional','慣行'],['unknown','未確認']]) {
+      const button = node('button',label); button.type = 'button'; button.setAttribute('role','tab');
+      const active = key ? filters.cultivation.has(key) : !filters.cultivation.size;
+      button.setAttribute('aria-selected',String(active)); button.setAttribute('aria-controls','menu-panel'); button.tabIndex = active ? 0 : -1;
+      button.addEventListener('click',()=> { filters.cultivation.clear(); if (key) filters.cultivation.add(key); renderTabs(); applyView(); [...container.children].find(tab=>tab.textContent === label)?.focus?.(); });
+      button.addEventListener('keydown',event=> {
+        const tabs = [...container.children], index = tabs.indexOf(button);
+        const next = event.key === 'ArrowRight' ? (index+1)%tabs.length : event.key === 'ArrowLeft' ? (index+tabs.length-1)%tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length-1 : null;
+        if (next !== null) { event.preventDefault(); tabs[next].click(); }
+      });
+      container.append(button);
+    }
+  }
   const status = text=> { $('menu-status').textContent = text; };
   const canLeave = ()=> { if (dirty || busy) { status('未保存の販売準備表があります。保存してから移動・再読込してください。'); return false; } return true; };
   const skuName = row=>source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id)?.name ?? row.sku_id;
@@ -63,13 +136,14 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     }
   }
   function renderRows() {
-    $('menu-rows').replaceChildren(); cards.clear();
+    $('menu-rows').replaceChildren(); $('menu-detail-row').replaceChildren(); detailKey = null; cards.clear();
     for (const row of rows) {
       const card = node('article'); card.className = 'menu-row';
       const title = node('h3'), info = node('p'), media = node('div'), tags = node('div'), detail = node('details'), condition = node('p');
       detail.className = 'menu-row-detail'; detail.append(node('summary','写真・単価・荷姿詳細')); tags.className = 'menu-card-tags'; media.className = 'menu-row-photo';
-      info.className = 'menu-row-info'; card.append(title,info);
-      const refs = {title,info,media,tags,card,detail,condition,inputs:[]}; cards.set(`${row.item_id}/${row.sku_id}`,refs); updateCard(row,refs);
+      info.className = 'menu-row-info'; const identity = node('div'); identity.className = 'menu-row-identity'; identity.append(title,info); card.append(identity);
+      const link = node('button','詳細を開く'); link.type = 'button'; link.className = 'menu-detail-link'; link.addEventListener('click',()=>openDetail(rowKey(row),link)); identity.append(tags,link);
+      const refs = {title,info,media,tags,card,detail,condition,link,row,cells:[identity,detail],inputs:[]}; cards.set(`${row.item_id}/${row.sku_id}`,refs); updateCard(row,refs);
       const state = node('p'); state.className = 'menu-row-state';
       const updateState = ()=> { state.textContent = row.planned_quantity === null || row.prepared_quantity === null ? '残り 未確認' : row.prepared_quantity >= row.planned_quantity ? '残り 0・準備完了' : `残り ${row.planned_quantity-row.prepared_quantity}`; };
       const fields = node('div'); fields.className = 'menu-row-fields';
@@ -80,19 +154,21 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
           const value = numberValue(input);
           if (input.validity?.badInput || value !== null && (!Number.isSafeInteger(value) || value < 0)) { input.setCustomValidity('0以上の安全な整数を入力してください。'); row[key] = null; summary(); updateState(); return; }
           input.setCustomValidity(''); row[key] = value; dirty = true; status('未保存の変更があります。'); summary(); updateState();
-        }); wrapper.append(input); if (key === 'price_yen') detail.append(wrapper); else fields.append(wrapper);
+        }); wrapper.append(input); if (key === 'price_yen') detail.append(wrapper); else { fields.append(wrapper); refs.cells.push(wrapper); }
       }
-      updateState(); detail.append(condition,media); card.append(tags,fields,state,detail); $('menu-rows').append(card);
+      updateState(); detail.append(condition,media); refs.cells.push(state); card.append(fields,state,detail); $('menu-rows').append(card);
     }
     if (!rows.length) $('menu-rows').append(node('p',selected ? '登録済みSKUを選んで追加してください。' : '日付を追加してください。'));
-    summary(); controls(); renderTags(); applyView();
+    summary(); controls(); renderTags(); renderTabs(); applyView(); applyLayout();
+    if (view?.location.hash.startsWith('#sku=')) routeDetail();
   }
   function applyView() {
     const visible = visibleMenuRows(rows,source.skus,source.items,filters,sort);
     const shown = new Set(visible);
     for (const row of rows) cards.get(`${row.item_id}/${row.sku_id}`).card.hidden = !shown.has(row);
     const ordered = [...visible,...rows.filter(row=>!shown.has(row))];
-    for (const row of ordered) $('menu-rows').append(cards.get(`${row.item_id}/${row.sku_id}`).card);
+    for (const row of ordered) if (rowKey(row) !== detailKey) $('menu-rows').append(cards.get(rowKey(row)).card);
+    if (detailKey && cards.has(detailKey)) cards.get(detailKey).card.hidden = false;
     const labels = [...filters.item].map(id=>source.items.find(item=>item.id===id)?.name ?? id).concat([...filters.cultivation].map(key=>({organic:'有機',conventional:'慣行',unknown:'未確認'})[key]),[...filters.price].map(key=>key === 'range' ? '200〜500円' : '価格未定'));
     $('menu-filter-summary').textContent = `絞り込み・並び替え：${visible.length}/${rows.length}件・${labels.join('・') || '全件'} ／ ${({'registered':'登録順',item:'品目順','price-asc':'安い順','price-desc':'高い順','planned-desc':'必要数が多い順'})[sort]}`;
     $('menu-count').textContent = `${visible.length}件表示 ／全${rows.length}件（日付全体の合計）`;
@@ -100,7 +176,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
   }
   function renderTags() {
     const present = new Set(rows.map(row=>row.item_id));
-    const groups = {item:source.items.filter(item=>present.has(item.id)).map(item=>[item.id,item.name]),cultivation:[['organic','有機'],['conventional','慣行'],['unknown','未確認']],price:[['range','200〜500円'],['unknown','価格未定']]};
+    const groups = {item:source.items.filter(item=>present.has(item.id)).map(item=>[item.id,item.name]),price:[['range','200〜500円'],['unknown','価格未定']]};
     for (const [group,choices] of Object.entries(groups)) {
       const container = $(`menu-${group}-tags`); container.replaceChildren();
       for (const [key,label] of choices) {
@@ -110,11 +186,11 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
       }
     }
   }
-  function clearFilters() { for (const values of Object.values(filters)) values.clear(); renderTags(); applyView(); }
+  function clearFilters() { for (const values of Object.values(filters)) values.clear(); renderTags(); renderTabs(); applyView(); }
   $('menu-clear-filters').addEventListener('click',clearFilters);
   $('menu-sort').addEventListener('change',()=> { sort = $('menu-sort').value; applyView(); });
   $('menu-reapply').addEventListener('click',applyView);
-  $('menu-form').addEventListener('invalid',event=> { clearFilters(); for (const refs of cards.values()) if (refs.inputs.includes(event.target)) refs.detail.open = true; },true);
+  $('menu-form').addEventListener('invalid',event=> { clearFilters(); for (const refs of cards.values()) if (refs.inputs.includes(event.target)) { if (detailKey) { if (view) view.history.replaceState(null,'',view.location.pathname+view.location.search); showDetail(null,false); } refs.detail.open = true; } },true);
   function renderDates() {
     $('menu-date').replaceChildren();
     if (!source.sheets.length) { const option = node('option','日付未登録'); option.value = ''; $('menu-date').append(option); }

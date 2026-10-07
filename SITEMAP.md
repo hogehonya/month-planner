@@ -18,3 +18,5 @@
 `public/nourin-base.json` は農林カレンダーの2026年10月・野菜／有機コースA班の取込データです。
 
 - `/packaging.html`: 販売準備表・荷姿写真マスタ（`packaging.mjs`、`menu-sheet.mjs`、`packaging-model.mjs`、`packaging.css`）。`/.netlify/functions/packaging` で日付別販売準備表・共通SKU・写真を読み書き。
+
+- `/packaging.html#sku=品目ID%2FSKU_ID`: 販売準備表の独立詳細ビュー。同じフォームの入力を保持し、一覧へ戻る／ブラウザ履歴で復帰。

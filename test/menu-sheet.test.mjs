@@ -6,13 +6,15 @@ const row = {item_id:'item-14',sku_id:'real-001',price_yen:100,planned_quantity:
 class Element {
   constructor(tag='') {this.tag=tag;this.children=[];this.listeners={};this.value='';this.dataset={};}
   append(...children){for(const child of children){this.children=this.children.filter(existing=>existing!==child);this.children.push(child);}}
+  click(){this.listeners.click?.();}
+  focus(){this.focused=true;}
   setAttribute(name,value){this[name]=value;}
   replaceChildren(...children){this.children=children;}
   addEventListener(name,fn){this.listeners[name]=fn;}
   setCustomValidity(value){this.validation=value;}
   reportValidity(){return !this.validation && this.children.every(child=>child.reportValidity());}
 }
-function setup(failure=null) {
+function setup(failure=null,view=null) {
   const elements = new Map(), requests=[], edits=[];
   const get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
   let sheets=[{date:'2026-10-17',rows:[{...row}],etag:'v1'}];
@@ -25,7 +27,7 @@ function setup(failure=null) {
     sheets=[...sheets.filter(s=>s.date!==body.date),sheet];return {ok:true,sheet};
   };
   get('menu-form').append(get('menu-rows'));
-  const menu=setupMenu({getElementById:get,createElement:tag=>new Element(tag)},api,(item,sku)=>edits.push({item,sku}));
+  const menu=setupMenu({defaultView:view,getElementById:get,createElement:tag=>new Element(tag)},api,(item,sku)=>edits.push({item,sku}));
   const source={items:[{id:'item-14',name:'ダイコン'}],skus:[{item_id:'item-14',id:'real-001',name:'大根',price_yen:100},{item_id:'item-01',id:'sample',name:'サンプル',price_yen:200}],sheets};
   menu.receive(source);
   return {get,menu,requests,edits,setFailure:value=>{saveFailure=value;},source};
@@ -107,7 +109,7 @@ test('全件未入力の数量・金額は0合計と表示しない',()=> {
 
 test('おしながきに対応SKUの写真を表示し、未登録から編集できる',()=> {
   const ui=setup(), card=ui.get('menu-rows').children[0];
-  assert.equal(card.children.find(child=>child.className==='menu-card-tags').children[0].textContent,'ダイコン');
+  assert.equal(find(card,child=>child.className==='menu-card-tags').children[0].textContent,'ダイコン');
   const media=find(card,child=>child.className==='menu-row-photo');
   assert.equal(media.children[0].textContent,'写真未登録');
   media.children[1].listeners.click();
@@ -204,4 +206,63 @@ test('閉じた絞り込みsummaryに件数を表示し、商品名にある品�
  ui.get('menu-clear-filters').listeners.click();
  ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>sku.id==='real-001'?{...sku,type:'青首',packaging_condition:'2本袋'}:sku)});
  assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-row-info').textContent,'青首 ／ 2本袋');
+});
+
+
+test('栽培タブ・表カード・独立詳細往復は不正値と原文、フィルタ・ソートを保持する',()=> {
+  const ui=setup();
+  const source={...ui.source,skus:ui.source.skus.map(sku=>({...sku,cultivation_method:sku.id==='real-001'?'organic':'conventional'})),sheets:[{date:'2026-10-17',etag:'v1',rows:[{...row},{...row,item_id:'item-01',sku_id:'sample'}]}]};
+  ui.menu.receive(source);
+  const first=ui.get('menu-rows').children[0], planned=inputIn(first,1), price=inputIn(first,0);
+  planned.value='1.5';planned.listeners.input();price.value='00100';price.listeners.input();
+  ui.get('menu-sort').value='price-desc';ui.get('menu-sort').listeners.change();
+  ui.get('menu-cultivation-tabs').children.find(tab=>tab.textContent==='慣行').click();
+  assert.equal(first.hidden,true);
+  ui.get('menu-layout-table').click();assert.equal(ui.get('menu-rows').dataset.layout,'table');
+  ui.get('menu-layout-card').click();assert.equal(ui.get('menu-rows').dataset.layout,'card');
+  ui.get('menu-cultivation-tabs').children.find(tab=>tab.textContent==='有機').click();
+  assert.equal(first.hidden,false);
+  const link=find(first,el=>el.className==='menu-detail-link');link.click();
+  assert.equal(ui.get('menu-list-controls').hidden,true);assert.equal(ui.get('menu-master').hidden,true);
+  assert.equal(ui.get('menu-detail-row').children[0],first);assert.equal(ui.get('menu-detail-title').textContent,'大根');
+  assert.equal(find(first,el=>el.tag==='details').open,true);
+  ui.get('menu-detail-back').click();
+  assert.equal(ui.get('menu-list-controls').hidden,false);assert.equal(ui.get('menu-detail-view').hidden,true);
+  assert.equal(planned.value,'1.5');assert.ok(planned.validation);assert.equal(price.value,'00100');
+  assert.equal(ui.get('menu-sort').value,'price-desc');
+  assert.equal(ui.get('menu-cultivation-tabs').children.find(tab=>tab.textContent==='有機')['aria-selected'],'true');
+  assert.equal(ui.requests.length,0);
+});
+
+test('栽培タブは矢印・Home・Endで選択し、未確認もアクセスできる',()=> {
+  const ui=setup(), tabs=()=>ui.get('menu-cultivation-tabs').children;
+  const key=(tab,value)=>tab.listeners.keydown({key:value,preventDefault(){}});
+  key(tabs()[0],'ArrowRight');assert.equal(tabs()[1]['aria-selected'],'true');
+  key(tabs()[1],'End');assert.equal(tabs()[3]['aria-selected'],'true');
+  assert.equal(ui.get('menu-rows').children[0].hidden,false);
+  key(tabs()[3],'Home');assert.equal(tabs()[0]['aria-selected'],'true');
+  key(tabs()[0],'ArrowLeft');assert.equal(tabs()[3]['aria-selected'],'true');
+});
+
+
+test('表は列見出し・行・セルを持ち、詳細とカードでは表の意味を外す',()=> {
+ const ui=setup(), card=ui.get('menu-rows').children[0];
+ ui.get('menu-layout-table').click();
+ assert.equal(ui.get('menu-table').role,'table'); assert.equal(ui.get('menu-table-head').hidden,false);
+ assert.equal(card.role,'row');assert.equal(find(card,el=>el.className==='menu-row-identity').role,'cell');
+ find(card,el=>el.className==='menu-detail-link').click();assert.equal(card.role,'article');
+ ui.get('menu-detail-back').click();assert.equal(card.role,'row');
+ ui.get('menu-layout-card').click();assert.equal(card.role,'article');assert.equal(ui.get('menu-table-head').hidden,true);
+});
+
+test('不正入力で詳細を閉じると履歴も一覧へ戻り、再描画で詳細を再開しない',()=> {
+ const listeners={}, location={hash:'',pathname:'/packaging.html',search:''};
+ const view={location,addEventListener:(name,fn)=>{listeners[name]=fn;},history:{state:null,
+ pushState(state,title,url){this.state=state;location.hash=url;},
+ replaceState(state,title,url){this.state=state;location.hash=url.includes('#')?url.slice(url.indexOf('#')):'';}}};
+ const ui=setup(null,view),card=ui.get('menu-rows').children[0],price=inputIn(card,0);
+ find(card,el=>el.className==='menu-detail-link').click();assert.match(location.hash,/#sku=/);
+ price.value='1.5';price.listeners.input();ui.get('menu-form').listeners.invalid({target:price});
+ assert.equal(location.hash,'');assert.equal(view.history.state,null);assert.equal(ui.get('menu-detail-view').hidden,true);
+ listeners.popstate();listeners.hashchange();assert.equal(ui.get('menu-detail-view').hidden,true);assert.equal(price.value,'1.5');
 });
