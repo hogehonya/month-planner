@@ -14,6 +14,7 @@ services:
     environment:
       NODE_ENV: production
       APP_ORIGIN: ${APP_ORIGIN:?APP_ORIGIN is required}
+      ONLINE_SOURCE_ORIGIN: ${ONLINE_SOURCE_ORIGIN:-}
       APP_REVISION: ${APP_REVISION:?APP_REVISION is required}
       HOST: ${HOST:-0.0.0.0}
       PORT: ${PORT:-3000}

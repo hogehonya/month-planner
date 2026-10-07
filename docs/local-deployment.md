@@ -12,7 +12,7 @@ CIはcomposeと非機密設定を`/home/honya/month-planner`へコピーし、`A
 
 `month-planner`コンテナはUID/GID 1000で実行します。永続領域`/mnt/8TBHDD/SERVICES/month-planner`を同じ所有者で事前作成し、`/app/data`へ接続します。root filesystemは読み取り専用、`/tmp`はtmpfsです。外部Docker network `traefik`とTraefikの`internal` entrypointを使い、NPMのワイルドカードHTTPSからNASの8088番を経由して接続します。Host `month-planner.honya.dev`を内部3000番へ転送します。ホストの公開ポートは割り当てません。DNS、TLS終端、LAN限定のアクセス境界はホスト側で管理します。
 
-この配置は空の独立データで開始します。Netlifyの既存データを取得・同期・上書きしません。同じイメージへの再デプロイでも永続領域を維持します。一つのデータ領域で動かすプロセスは一つだけです。
+この配置は空の独立データで開始します。オンラインからの取得は、LAN画面で差分を確認して置き換えを確定した場合だけ行います。Netlify側へ書き込みません。同じイメージへの再デプロイでも永続領域を維持します。一つのデータ領域で動かすプロセスは一つだけです。
 
 ## 秘密値の準備と更新
 
@@ -27,3 +27,10 @@ Infisical Machine Identity `mi-svc-month-planner`（credential prefix: `month-pl
 この手順ではNetlifyの自動Git連携を前提にしません。Netlify版は公式のデプロイ経路から同じcommitを手動公開し、公開済みrevisionを別途確認します。LAN版CIはNetlifyへデプロイしません。
 
 ロールバックもCI経由とし、以前成功したmainのcommitのpipelineを再実行して、そのSHAのイメージと設定を適用します。イメージタグに`latest`は使いません。手動のcompose更新やボリューム削除、イメージpruneは行いません。コードを戻してもデータは戻らないため、保存形式が変わる変更では互換性を確認します。データ復元はプロセス停止中に取得したバックアップを使う独立工程です。
+
+
+## 手動同期の配備設定
+
+`config.env.example`の`ONLINE_SOURCE_ORIGIN`をCompose環境へ渡して、LAN版の「オンラインと同期」を有効にします。同期元は`https://month-planner-13f9a0.netlify.app`です。オンライン版にも同じ版の読み取り用export実装を先に公開してください。未対応のオンライン版や取得失敗ではプレビューが失敗し、ローカルの現行データを置き換えません。
+
+配備やCIはデータ同期を実行しません。利用者が差分を確認し、「オンラインの内容で置き換える」を押して確定します。オンライン→ローカルの一方向で、カレンダーは独立したままです。旧世代と未採用世代を保持するため、バックアップ対象はDATA_DIR全体です。詳細な保存・取得制限は[LAN実行環境](../local-runtime/README.md#販売準備表の手動同期)を参照してください。
