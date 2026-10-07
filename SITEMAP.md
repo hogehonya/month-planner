@@ -39,3 +39,5 @@ SKU詳細の共有コメントは `public/sku-comments.mjs` が表示・追記�
 - `local-runtime/online-sync.mjs`: 固定オンラインoriginからの取得検証・差分token・ローカル保存世代切替。
 - `netlify/lib/packaging-export.mjs`: 包装APIの読み取り用export補助。
 - `test/online-sync-ui.test.mjs`: 同期の表示・差分・入力保護・確認・再試行の回帰テスト。
+
+Issue #82: `public/packaging.css` のカード表示と `public/menu-sheet.mjs` の補助操作領域で、情報階層と数量・操作の区切りを実装。

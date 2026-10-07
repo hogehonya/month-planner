@@ -203,8 +203,8 @@ export function setupMenu(document,api,editSKU = ()=>{},onSKUChanged = ()=>{}) {
       const title = node('h3'), info = node('p'), media = node('div'), tags = node('div'), detail = node('details'), condition = node('p');
       detail.className = 'menu-row-detail'; detail.append(node('summary','写真・単価・荷姿詳細')); tags.className = 'menu-card-tags'; media.className = 'menu-row-photo';
       info.className = 'menu-row-info'; const identity = node('div'); identity.className = 'menu-row-identity'; identity.append(tags,title,info); card.append(identity);
-      const link = node('button','詳細を開く'); link.type = 'button'; link.className = 'menu-detail-link'; link.addEventListener('click',()=>openDetail(rowKey(row),link)); identity.append(link);
-      const decision = node('p'); decision.className = 'menu-row-decision'; identity.append(decision);
+      const link = node('button','詳細を開く'); link.type = 'button'; link.className = 'menu-detail-link'; link.addEventListener('click',()=>openDetail(rowKey(row),link)); const actions = node('div'); actions.className = 'menu-row-actions'; identity.append(actions);
+      const decision = node('p'); decision.className = 'menu-row-decision'; actions.append(decision,link);
       const refs = {title,info,media,tags,card,detail,condition,link,row,decision,checks:[],cells:[identity,detail],inputs:[]}; cards.set(`${row.item_id}/${row.sku_id}`,refs); updateCard(row,refs);
       const state = node('p'); state.className = 'menu-row-state';
       const updateState = ()=> {

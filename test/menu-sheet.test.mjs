@@ -436,3 +436,16 @@ test('残りはラベルと数量を分け、未確認・完了と表の読み�
  ui.get('menu-layout-table').listeners.click();
  assert.equal(remaining.role,'cell');assert.equal(remaining.textContent,'残り 0・準備完了');
 });
+
+
+test('カードの状態と詳細操作を独立した操作領域にまとめ、数量DOMを保持する',()=> {
+ const ui=setup(), card=ui.get('menu-rows').children[0];
+ const actions=find(card,el=>el.className==='menu-row-actions');
+ assert.ok(actions);
+ assert.equal(actions.children[0].className,'menu-row-decision');
+ assert.equal(actions.children[1].className,'menu-detail-link');
+ const planned=input(ui,1);planned.value='1.5';planned.listeners.input();
+ ui.get('menu-layout-table').listeners.click();ui.get('menu-layout-card').listeners.click();
+ assert.equal(input(ui,1),planned);assert.equal(planned.value,'1.5');
+ actions.children[1].click();assert.equal(inputIn(ui.get('menu-detail-row').children[0],1),planned);
+});
