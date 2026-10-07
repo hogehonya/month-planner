@@ -318,3 +318,15 @@ test('決定と写真なしは独立して絞れ、コピーした日付の確�
  ui.get('menu-new-date').value='2026-10-18';ui.get('menu-copy').checked=true;await ui.get('menu-add-date').listeners.submit(submit());
  assert.equal(ui.requests[0].rows[0].decision_bits,0);assert.equal(ui.requests[0].rows[0].planned_quantity,null);
 });
+
+
+test('競合比較は同じ数量でも他者の各確定bitを表示し、入力側のbitを保持する',async()=> {
+ const ui=setup(409);
+ ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,packaging_condition:'2本袋'})),sheets:[{date:'2026-10-17',rows:[{...row,decision_bits:1}],etag:'v1'}]});
+ await ui.get('menu-form').listeners.submit(submit());
+ await ui.get('menu-latest').listeners.click();
+ const text=ui.get('menu-latest-rows').children[0].textContent;
+ assert.match(text,/荷姿: 未確定/);assert.match(text,/単価: 未確定/);assert.match(text,/必要数: 未確定/);
+ const card=ui.get('menu-rows').children[0];
+ assert.equal(find(card,el=>el.dataset.bit==='1').checked,true);
+});

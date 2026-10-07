@@ -280,7 +280,10 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
       const next = await api(), latest = next.sheets.find(sheet=>sheet.date === selected);
       if (!latest) throw new Error('対象の日付を読み込めませんでした。');
       etag = latest.etag; $('menu-latest-rows').replaceChildren();
-      for (const row of latest.rows) $('menu-latest-rows').append(node('p',`${skuName(row)}：単価 ${row.price_yen ?? '未入力'}円 ／予定 ${row.planned_quantity ?? '未入力'} ／準備 ${row.prepared_quantity ?? '未入力'}`));
+      for (const row of latest.rows) {
+        const confirmed = [[1,'荷姿'],[2,'単価'],[4,'必要数']].map(([bit,label])=>`${label}: ${(row.decision_bits ?? 0) & bit ? '確定' : '未確定'}`).join(' ／ ');
+        $('menu-latest-rows').append(node('p',`${skuName(row)}：単価 ${row.price_yen ?? '未入力'}円 ／予定 ${row.planned_quantity ?? '未入力'} ／準備 ${row.prepared_quantity ?? '未入力'} ／ ${confirmed}`));
+      }
       $('menu-conflict-view').hidden = false; $('menu-conflict-view').open = true;
       conflict = false; $('menu-latest').hidden = true; status('最新状態を表示しました。入力は保持しています。比較・確認して保存すると入力内容で上書きします。');
     } catch(e) { status(`${e.message} 入力は保持しています。最新状態の確認を再試行してください。`); }
