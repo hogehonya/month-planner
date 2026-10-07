@@ -6,6 +6,8 @@ const row = {item_id:'item-14',sku_id:'real-001',price_yen:100,planned_quantity:
 class Element {
   constructor(tag='') {this.tag=tag;this.children=[];this.listeners={};this.value='';this.dataset={};}
   append(...children){for(const child of children){this.children=this.children.filter(existing=>existing!==child);this.children.push(child);}}
+  click(){this.listeners.click?.();}
+  focus(){this.focused=true;}
   setAttribute(name,value){this[name]=value;}
   replaceChildren(...children){this.children=children;}
   addEventListener(name,fn){this.listeners[name]=fn;}
@@ -204,4 +206,40 @@ test('閉じた絞り込みsummaryに件数を表示し、商品名にある品�
  ui.get('menu-clear-filters').listeners.click();
  ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>sku.id==='real-001'?{...sku,type:'青首',packaging_condition:'2本袋'}:sku)});
  assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-row-info').textContent,'青首 ／ 2本袋');
+});
+
+
+test('栽培タブ・表カード・独立詳細往復は不正値と原文、フィルタ・ソートを保持する',()=> {
+  const ui=setup();
+  const source={...ui.source,skus:ui.source.skus.map(sku=>({...sku,cultivation_method:sku.id==='real-001'?'organic':'conventional'})),sheets:[{date:'2026-10-17',etag:'v1',rows:[{...row},{...row,item_id:'item-01',sku_id:'sample'}]}]};
+  ui.menu.receive(source);
+  const first=ui.get('menu-rows').children[0], planned=inputIn(first,1), price=inputIn(first,0);
+  planned.value='1.5';planned.listeners.input();price.value='00100';price.listeners.input();
+  ui.get('menu-sort').value='price-desc';ui.get('menu-sort').listeners.change();
+  ui.get('menu-cultivation-tabs').children.find(tab=>tab.textContent==='慣行').click();
+  assert.equal(first.hidden,true);
+  ui.get('menu-layout-table').click();assert.equal(ui.get('menu-rows').dataset.layout,'table');
+  ui.get('menu-layout-card').click();assert.equal(ui.get('menu-rows').dataset.layout,'card');
+  ui.get('menu-cultivation-tabs').children.find(tab=>tab.textContent==='有機').click();
+  assert.equal(first.hidden,false);
+  const link=find(first,el=>el.className==='menu-detail-link');link.click();
+  assert.equal(ui.get('menu-list-controls').hidden,true);assert.equal(ui.get('menu-master').hidden,true);
+  assert.equal(ui.get('menu-detail-row').children[0],first);assert.equal(ui.get('menu-detail-title').textContent,'大根');
+  assert.equal(find(first,el=>el.tag==='details').open,true);
+  ui.get('menu-detail-back').click();
+  assert.equal(ui.get('menu-list-controls').hidden,false);assert.equal(ui.get('menu-detail-view').hidden,true);
+  assert.equal(planned.value,'1.5');assert.ok(planned.validation);assert.equal(price.value,'00100');
+  assert.equal(ui.get('menu-sort').value,'price-desc');
+  assert.equal(ui.get('menu-cultivation-tabs').children.find(tab=>tab.textContent==='有機')['aria-selected'],'true');
+  assert.equal(ui.requests.length,0);
+});
+
+test('栽培タブは矢印・Home・Endで選択し、未確認もアクセスできる',()=> {
+  const ui=setup(), tabs=()=>ui.get('menu-cultivation-tabs').children;
+  const key=(tab,value)=>tab.listeners.keydown({key:value,preventDefault(){}});
+  key(tabs()[0],'ArrowRight');assert.equal(tabs()[1]['aria-selected'],'true');
+  key(tabs()[1],'End');assert.equal(tabs()[3]['aria-selected'],'true');
+  assert.equal(ui.get('menu-rows').children[0].hidden,false);
+  key(tabs()[3],'Home');assert.equal(tabs()[0]['aria-selected'],'true');
+  key(tabs()[0],'ArrowLeft');assert.equal(tabs()[3]['aria-selected'],'true');
 });
