@@ -12,7 +12,7 @@ Node.js 22.12以上で `npm ci` 後に `npm start` を実行します。設定�
 | `APP_ORIGIN` | 必須。利用者の正規origin。例 `https://month-planner.honya.dev`。末尾スラッシュなし |
 | `HOST` | listen先。通常は127.0.0.1、コンテナは0.0.0.0 |
 | `PORT` | listenポート。既定3000 |
-| `ONLINE_SOURCE_ORIGIN` | 任意。同期元のHTTPS origin。設定時だけ手動同期を有効化。例 `https://month-planner-13f9a0.netlify.app`。ブラウザから変更不可 |
+| `ONLINE_SOURCE_ORIGIN` | 任意。同期元のHTTPS origin。未設定時は `https://month-planner-13f9a0.netlify.app` を使用。ブラウザから変更不可 |
 | `APP_REVISION` | `/healthz` で返すデプロイ済みcommit識別子 |
 | `EDIT_PIN` | Infisicalの承認済みラッパーから注入。未設定ではプランナー編集を拒否 |
 
