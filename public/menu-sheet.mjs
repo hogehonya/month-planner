@@ -177,14 +177,15 @@ export function setupMenu(document,api,editSKU = ()=>{},onSKUChanged = ()=>{}) {
     refs.cultivationSelect.value = refs.card.dataset.cultivation; refs.cultivationSelect.disabled = busy || !!refs.cultivationBusy;
     refs.cultivationSelect.setAttribute('aria-label',`${skuName(row)}の栽培方法（全日付共通）`);
     badge.append(refs.cultivationSelect,node('small','全日付共通'));
-    refs.tags.replaceChildren(node('span',item?.name ?? row.item_id),badge);
+    const itemName = node('span',item?.name ?? row.item_id); itemName.className = 'menu-item-name';
+    const variety = node('span',`品種・種類 ${sku?.type || '未確認'}`); variety.className = 'menu-variety';
+    refs.tags.replaceChildren(badge,itemName,variety);
     if (row.status_bits & 1 && !sku?.packaging_condition?.trim()) { row.status_bits &= ~1; dirty = true; status('荷姿が未入力のため確定を解除しました。販売準備表を保存してください。'); }
     const bits = decisionState(row,sku);
     refs.decision.textContent = `${(bits & 7) === 7 ? '決定' : '未決定'}${!(bits & 8) ? '・写真なし' : ''}${bits & 16 ? '・出荷なし' : ''}`;
     for (const [bit,check] of refs.checks) { check.checked = !!(bits & bit); check.disabled = busy || !confirmable(row,sku,bit); }
     const condition = sku?.packaging_condition || '荷姿未確認';
-    const type = sku?.type && !skuName(row).includes(sku.type) ? `${sku.type} ／ ` : '';
-    refs.info.textContent = `${type}${condition.length > 36 ? condition.slice(0,36)+'…' : condition}`;
+    refs.info.textContent = condition;
     refs.condition.textContent = `荷姿：${condition}`;
     refs.media.replaceChildren();
     if (sku?.photo_id) {
@@ -201,8 +202,8 @@ export function setupMenu(document,api,editSKU = ()=>{},onSKUChanged = ()=>{}) {
       const card = node('article'); card.className = 'menu-row';
       const title = node('h3'), info = node('p'), media = node('div'), tags = node('div'), detail = node('details'), condition = node('p');
       detail.className = 'menu-row-detail'; detail.append(node('summary','写真・単価・荷姿詳細')); tags.className = 'menu-card-tags'; media.className = 'menu-row-photo';
-      info.className = 'menu-row-info'; const identity = node('div'); identity.className = 'menu-row-identity'; identity.append(title,info); card.append(identity);
-      const link = node('button','詳細を開く'); link.type = 'button'; link.className = 'menu-detail-link'; link.addEventListener('click',()=>openDetail(rowKey(row),link)); identity.append(tags,link);
+      info.className = 'menu-row-info'; const identity = node('div'); identity.className = 'menu-row-identity'; identity.append(tags,title,info); card.append(identity);
+      const link = node('button','詳細を開く'); link.type = 'button'; link.className = 'menu-detail-link'; link.addEventListener('click',()=>openDetail(rowKey(row),link)); identity.append(link);
       const decision = node('p'); decision.className = 'menu-row-decision'; identity.append(decision);
       const refs = {title,info,media,tags,card,detail,condition,link,row,decision,checks:[],cells:[identity,detail],inputs:[]}; cards.set(`${row.item_id}/${row.sku_id}`,refs); updateCard(row,refs);
       const state = node('p'); state.className = 'menu-row-state';
