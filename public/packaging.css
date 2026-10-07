@@ -22,6 +22,8 @@
 
 #menu-detail-row .menu-row[data-cultivation]{border-inline-start:7px solid var(--cultivation-border);padding-inline-start:.75rem}
 
+#sku-comments{max-width:720px;margin:1rem auto;padding:1rem;border:1px solid var(--line);border-radius:8px}#sku-comment-list{list-style:none;padding:0}#sku-comment-list li{border-bottom:1px solid var(--line);padding:.5rem 0}.sku-comment-text{white-space:pre-wrap;overflow-wrap:anywhere}#sku-comment-content{width:100%;font:inherit}#sku-comment-message{overflow-wrap:anywhere}
+
 .menu-confirmations{border:1px solid var(--line);border-radius:6px;padding:.5rem;margin:.5rem 0}.menu-confirmations legend{font-weight:600}.menu-confirmations label{display:flex;align-items:center;gap:.5rem;min-height:44px}.menu-confirmations input{width:22px;min-height:22px;height:22px;margin:0}.menu-row-decision{font-size:.875rem;font-weight:600;margin:.25rem 0}
 
 .menu-cultivation-select{width:auto!important;min-height:44px;font:inherit;font-weight:600;background:transparent;color:inherit;border:0;max-width:100%;padding:.25rem}.cultivation-badge small{font-size:.75rem;font-weight:400}.cultivation-badge{flex-wrap:wrap}
