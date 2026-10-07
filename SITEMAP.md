@@ -34,3 +34,8 @@ SKU詳細の共有コメントは `public/sku-comments.mjs` が表示・追記�
 - `config.env.example`: LAN版の非機密設定。APP_REVISIONはCIが追記。
 - `ops/README.md`: ホスト運用設定の索引。
 - `ops/month-planner-secrets-only.conf`: Infisicalの秘密値準備だけを行うsystemd override。
+
+- `public/online-sync.mjs`: LAN版だけの同期ボタン、実値差分プレビュー・置き換え確認。
+- `local-runtime/online-sync.mjs`: 固定オンラインoriginからの取得検証・差分token・ローカル保存世代切替。
+- `netlify/lib/packaging-export.mjs`: 包装APIの読み取り用export補助。
+- `test/online-sync-ui.test.mjs`: 同期の表示・差分・入力保護・確認・再試行の回帰テスト。

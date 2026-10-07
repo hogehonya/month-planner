@@ -9,3 +9,6 @@
 !local-runtime
 !local-runtime/**
 !netlify.toml
+
+!netlify/lib
+!netlify/lib/**

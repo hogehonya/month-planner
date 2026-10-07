@@ -1,4 +1,5 @@
 import { getStore } from '@netlify/blobs';
+import { exportPackaging } from '../lib/packaging-export.mjs';
 import { randomUUID } from 'node:crypto';
 import { ITEMS, PHOTO_LIMIT, validateSKU, validateSheet } from '../../public/packaging-model.mjs';
 import { parseDate, textLimit } from '../../public/model.mjs';
@@ -41,6 +42,7 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'pa
       const url = new URL(request.url);
       if (request.method === 'GET') {
         const store = openStore(), photo = url.searchParams.get('photo');
+        if (url.searchParams.get('export') === '1') return json(await exportPackaging(store));
         if (url.searchParams.has('comments')) {
           const prefix = await commentTarget(store,Object.fromEntries(url.searchParams));
           const {blobs} = await store.list({prefix});
