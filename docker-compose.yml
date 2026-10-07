@@ -1,0 +1,44 @@
+services:
+  app:
+    image: gitea.honya.dev/honya-dev-web-app-month-planner/app:${APP_REVISION:?APP_REVISION is required}
+    container_name: month-planner
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      NODE_ENV: production
+      APP_ORIGIN: ${APP_ORIGIN:?APP_ORIGIN is required}
+      APP_REVISION: ${APP_REVISION:?APP_REVISION is required}
+      HOST: ${HOST:-0.0.0.0}
+      PORT: ${PORT:-3000}
+      DATA_DIR: ${DATA_DIR:-/app/data}
+      EDIT_PIN: ${EDIT_PIN:?EDIT_PIN must be injected by Infisical}
+    volumes:
+      - /mnt/8TBHDD/SERVICES/month-planner:/app/data
+    networks:
+      - traefik
+    labels:
+      traefik.enable: 'true'
+      traefik.docker.network: traefik
+      traefik.http.routers.month-planner.entrypoints: internal
+      traefik.http.routers.month-planner.rule: Host(`month-planner.honya.dev`)
+      traefik.http.services.month-planner.loadbalancer.server.port: '3000'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:'+process.env.PORT+'/healthz',{headers:{Host:new URL(process.env.APP_ORIGIN).host}}).then(async r=>{const h=await r.json();if(!r.ok||!h.ok||h.revision!==process.env.APP_REVISION)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 6
+networks:
+  traefik:
+    external: true

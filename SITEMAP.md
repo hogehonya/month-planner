@@ -22,3 +22,13 @@
 - `/packaging.html#sku=品目ID%2FSKU_ID`: 販売準備表の独立詳細ビュー。同じフォームの入力を保持し、一覧へ戻る／ブラウザ履歴で復帰。
 
 SKU詳細の共有コメントは `public/sku-comments.mjs` が表示・追記・再試行・未送信入力の保護を担当します。包装APIの選択日・品目・SKU専用取得と投稿を使用し、販売準備表・写真とは独立して保存します。
+
+- `local-runtime/server.mjs`: LAN配置用の静的配信・既存API接続・`/healthz`。
+- `local-runtime/store.mjs`: 独立した永続ディスクストア。運用条件は `local-runtime/README.md`。
+- `Dockerfile`: 非rootのLANコンテナ。`/app/data` を永続化。
+- `docs/local-deployment.md`: LAN版のCI・デプロイ運用。
+- `.woodpecker.yml`: テスト・commit SHA付きコンテナビルド・mainのLANデプロイ。
+- `docker-compose.yml`: LAN版コンテナ・永続領域・Traefik接続・healthcheck。
+- `config.env.example`: LAN版の非機密設定。APP_REVISIONはCIが追記。
+- `ops/README.md`: ホスト運用設定の索引。
+- `ops/month-planner-secrets-only.conf`: Infisicalの秘密値準備だけを行うsystemd override。
