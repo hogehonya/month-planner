@@ -266,3 +266,23 @@ test('不正入力で詳細を閉じると履歴も一覧へ戻り、再描画�
  assert.equal(location.hash,'');assert.equal(view.history.state,null);assert.equal(ui.get('menu-detail-view').hidden,true);
  listeners.popstate();listeners.hashchange();assert.equal(ui.get('menu-detail-view').hidden,true);assert.equal(price.value,'1.5');
 });
+
+
+test('区分は商品名から推測せず、未確認と編集後の区分をタブ・商品枠へ割り当てる',()=> {
+ const ui=setup();
+ const card=ui.get('menu-rows').children[0];
+ assert.equal(card.dataset.cultivation,'unknown');
+ for(const key of ['organic','conventional','unknown']) {
+  const tab=ui.get('menu-cultivation-tabs').children.find(tab=>tab.dataset.cultivation===key);
+  assert.ok(tab);assert.equal(tab.children[0]['aria-hidden'],'true');
+ }
+ const planned=inputIn(card,1);planned.value='1.5';planned.listeners.input();
+ for(const [method,name] of [['organic','慣行と書いてある商品'],['conventional','有機と書いてある商品'],['unexpected','有機商品']]) {
+  ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>sku.id==='real-001'?{...sku,name,cultivation_method:method}:sku)});
+  const expected=method==='unexpected'?'unknown':method;
+  assert.equal(card.dataset.cultivation,expected);
+  const badge=find(card,el=>el.className==='cultivation-badge');
+  assert.equal(badge.dataset.cultivation,expected);assert.equal(badge.children[0]['aria-hidden'],'true');
+  assert.equal(inputIn(card,1),planned);assert.equal(planned.value,'1.5');
+ }
+});

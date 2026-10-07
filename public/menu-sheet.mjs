@@ -83,10 +83,16 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
       for (const cell of refs.cells) cell.setAttribute('role',inTable ? 'cell' : 'presentation');
     }
   }
+  function cultivationVisual(el,method) {
+    const key = ['organic','conventional'].includes(method) ? method : 'unknown';
+    el.dataset.cultivation = key;
+    const mark = node('span'); mark.className = 'cultivation-mark'; mark.setAttribute('aria-hidden','true'); el.append(mark);
+    return key;
+  }
   function renderTabs() {
     const container = $('menu-cultivation-tabs'); container.replaceChildren();
     for (const [key,label] of [['','全件'],['organic','有機'],['conventional','慣行'],['unknown','未確認']]) {
-      const button = node('button',label); button.type = 'button'; button.setAttribute('role','tab');
+      const button = node('button',label); button.type = 'button'; button.setAttribute('role','tab'); if (key) cultivationVisual(button,key);
       const active = key ? filters.cultivation.has(key) : !filters.cultivation.size;
       button.setAttribute('aria-selected',String(active)); button.setAttribute('aria-controls','menu-panel'); button.tabIndex = active ? 0 : -1;
       button.addEventListener('click',()=> { filters.cultivation.clear(); if (key) filters.cultivation.add(key); renderTabs(); applyView(); [...container.children].find(tab=>tab.textContent === label)?.focus?.(); });
@@ -121,7 +127,9 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     const sku = source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id);
     const item = source.items.find(item=>item.id === row.item_id);
     refs.title.textContent = skuName(row);
-    refs.tags.replaceChildren(node('span',item?.name ?? row.item_id),node('span',({organic:'有機',conventional:'慣行'})[sku?.cultivation_method] ?? '未確認'));
+    const badge = node('span',({organic:'有機',conventional:'慣行'})[sku?.cultivation_method] ?? '未確認'); badge.className = 'cultivation-badge';
+    refs.card.dataset.cultivation = cultivationVisual(badge,sku?.cultivation_method);
+    refs.tags.replaceChildren(node('span',item?.name ?? row.item_id),badge);
     const condition = sku?.packaging_condition || '荷姿未確認';
     const type = sku?.type && !skuName(row).includes(sku.type) ? `${sku.type} ／ ` : '';
     refs.info.textContent = `${type}${condition.length > 36 ? condition.slice(0,36)+'…' : condition}`;
