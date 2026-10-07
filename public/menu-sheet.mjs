@@ -48,7 +48,7 @@ export function setupMenu(document,api,editSKU = ()=>{},onSKUChanged = ()=>{}) {
       const refs = cards.get(detailKey);
       refs.card.hidden = false; refs.wasOpen = refs.detail.open; refs.detail.open = true;
       $('menu-detail-row').append(refs.card);
-      $('menu-detail-title').textContent = refs.title.textContent;
+      $('menu-detail-title').textContent = skuName(refs.row);
       refs.link.hidden = true;
       if (focus) $('menu-detail-title').focus?.();
     } else {
@@ -91,7 +91,10 @@ export function setupMenu(document,api,editSKU = ()=>{},onSKUChanged = ()=>{}) {
     $('menu-table-head').setAttribute('role','row');
     $('menu-rows').setAttribute('role',table ? 'rowgroup' : 'presentation');
     for (const refs of cards.values()) {
+      updateHeading(refs.row,refs);
       const inTable = table && rowKey(refs.row) !== detailKey;
+      if (inTable || rowKey(refs.row) === detailKey) refs.identity.append(refs.actions);
+      else refs.card.append(refs.actions);
       refs.card.setAttribute('role',inTable ? 'row' : 'article');
       for (const cell of refs.cells) cell.setAttribute('role',inTable ? 'cell' : 'presentation');
     }
@@ -163,10 +166,26 @@ export function setupMenu(document,api,editSKU = ()=>{},onSKUChanged = ()=>{}) {
       status(saved ? '栽培方法は保存しましたが最新データを取得できませんでした。入力は保持しています。区分を選び直して再試行してください。' : `${e.message} 栽培方法は保存できませんでした。保存済みの区分に戻しました。入力は保持しています。再試行できます。`);
     } finally { refs.cultivationBusy = false; updateCard(row,refs); }
   }
+  function updateHeading(row,refs) {
+    const sku = source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id);
+    const item = source.items.find(item=>item.id === row.item_id);
+    const inCard = layout === 'card' && rowKey(row) !== detailKey;
+    const original = skuName(row), type = sku?.type?.trim();
+    let name = original.replace(/\s*[（(]\s*(?:有機|慣行)\s*[）)]\s*$/u,'').trim() || row.sku_id;
+    const compact = value=>value.replace(/\s+/gu,'');
+    if (type && item && [item.name+type,type+item.name].some(value=>compact(value) === compact(name))) name = type;
+    refs.title.textContent = inCard ? name : original;
+    refs.title.hidden = inCard && name === item?.name;
+    if (refs.variety) refs.variety.hidden = Boolean(inCard && type && name.includes(type) && !refs.title.hidden);
+  }
+  function showDecision(refs,bits) {
+    refs.decision.replaceChildren(node('span',(bits & 7) === 7 ? '決定' : '未決定'));
+    if (!(bits & 8)) { const missing = node('span','・写真なし'); missing.className = 'menu-decision-photo'; refs.decision.append(missing); }
+    if (bits & 16) refs.decision.append(node('span','・出荷なし'));
+  }
   function updateCard(row,refs) {
     const sku = source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id);
     const item = source.items.find(item=>item.id === row.item_id);
-    refs.title.textContent = skuName(row);
     const badge = node('span'); badge.className = 'cultivation-badge';
     refs.card.dataset.cultivation = cultivationVisual(badge,sku?.cultivation_method);
     if (!refs.cultivationSelect) {
@@ -179,18 +198,22 @@ export function setupMenu(document,api,editSKU = ()=>{},onSKUChanged = ()=>{}) {
     badge.append(refs.cultivationSelect,node('small','全日付共通'));
     const itemName = node('span',item?.name ?? row.item_id); itemName.className = 'menu-item-name';
     const variety = node('span',`品種・種類 ${sku?.type || '未確認'}`); variety.className = 'menu-variety';
-    refs.tags.replaceChildren(badge,itemName,variety);
+    refs.variety = variety; refs.tags.replaceChildren(badge,itemName,variety);
+    updateHeading(row,refs);
     if (row.status_bits & 1 && !sku?.packaging_condition?.trim()) { row.status_bits &= ~1; dirty = true; status('荷姿が未入力のため確定を解除しました。販売準備表を保存してください。'); }
     const bits = decisionState(row,sku);
-    refs.decision.textContent = `${(bits & 7) === 7 ? '決定' : '未決定'}${!(bits & 8) ? '・写真なし' : ''}${bits & 16 ? '・出荷なし' : ''}`;
+    showDecision(refs,bits);
     for (const [bit,check] of refs.checks) { check.checked = !!(bits & bit); check.disabled = busy || !confirmable(row,sku,bit); }
     const condition = sku?.packaging_condition || '荷姿未確認';
     refs.info.textContent = condition;
     refs.condition.textContent = `荷姿：${condition}`;
     refs.media.replaceChildren();
+    refs.thumbnail.replaceChildren(); refs.thumbnail.disabled = busy || !sku || !item;
+    refs.thumbnail.setAttribute('aria-label',`${skuName(row)}の写真を${sku?.photo_id ? '変更' : '追加'}`);
     if (sku?.photo_id) {
       const image = node('img'); image.src = `/.netlify/functions/packaging?photo=${encodeURIComponent(sku.photo_id)}`; image.alt = `${item?.name ?? row.item_id}・${skuName(row)}の荷姿写真`; image.loading = 'lazy'; refs.media.append(image);
-    } else refs.media.append(node('p','写真未登録'));
+      const preview = node('img'); preview.src = image.src; preview.alt = ''; preview.loading = 'lazy'; refs.thumbnail.append(preview);
+    } else { refs.media.append(node('p','写真未登録')); refs.thumbnail.append(node('span','写真を追加')); }
     if (sku && item) {
       const button = node('button',sku.photo_id ? '写真を変更' : '写真を登録'); button.type = 'button'; button.disabled = busy;
       button.addEventListener('click',()=>editSKU(item,sku)); refs.media.append(button);
@@ -202,10 +225,15 @@ export function setupMenu(document,api,editSKU = ()=>{},onSKUChanged = ()=>{}) {
       const card = node('article'); card.className = 'menu-row';
       const title = node('h3'), info = node('p'), media = node('div'), tags = node('div'), detail = node('details'), condition = node('p');
       detail.className = 'menu-row-detail'; detail.append(node('summary','写真・単価・荷姿詳細')); tags.className = 'menu-card-tags'; media.className = 'menu-row-photo';
-      info.className = 'menu-row-info'; const identity = node('div'); identity.className = 'menu-row-identity'; identity.append(tags,title,info); card.append(identity);
-      const link = node('button','詳細を開く'); link.type = 'button'; link.className = 'menu-detail-link'; link.addEventListener('click',()=>openDetail(rowKey(row),link)); identity.append(link);
-      const decision = node('p'); decision.className = 'menu-row-decision'; identity.append(decision);
-      const refs = {title,info,media,tags,card,detail,condition,link,row,decision,checks:[],cells:[identity,detail],inputs:[]}; cards.set(`${row.item_id}/${row.sku_id}`,refs); updateCard(row,refs);
+      info.className = 'menu-row-info'; const identity = node('div'); identity.className = 'menu-row-identity'; identity.append(tags,title,info);
+      const header = node('div'); header.className = 'menu-row-header';
+      const thumbnail = node('button'); thumbnail.type = 'button'; thumbnail.className = 'menu-row-thumbnail';
+      thumbnail.addEventListener('click',()=> { const item = source.items.find(item=>item.id === row.item_id), sku = source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id); if (item && sku) editSKU(item,sku); });
+      header.append(thumbnail,identity); card.append(header);
+      const link = node('button','詳細を開く'); link.type = 'button'; link.className = 'menu-detail-link'; link.addEventListener('click',()=>openDetail(rowKey(row),link));
+      const decision = node('p'); decision.className = 'menu-row-decision';
+      const actions = node('div'); actions.className = 'menu-row-actions'; actions.append(decision,link); identity.append(actions);
+      const refs = {title,info,media,tags,card,detail,condition,link,row,decision,identity,actions,thumbnail,checks:[],cells:[identity,detail],inputs:[]}; cards.set(`${row.item_id}/${row.sku_id}`,refs); updateCard(row,refs);
       const state = node('p'); state.className = 'menu-row-state';
       const updateState = ()=> {
         const unknown = row.planned_quantity === null || row.prepared_quantity === null;
@@ -228,7 +256,7 @@ export function setupMenu(document,api,editSKU = ()=>{},onSKUChanged = ()=>{}) {
       }
       function updateDecision() {
         const sku = source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id), bits = decisionState(row,sku);
-        decision.textContent = `${(bits & 7) === 7 ? '決定' : '未決定'}${!(bits & 8) ? '・写真なし' : ''}${bits & 16 ? '・出荷なし' : ''}`;
+        showDecision(refs,bits);
         for (const [bit,check] of refs.checks) { check.checked = !!(bits & bit); check.disabled = busy || !confirmable(row,sku,bit); }
       }
       const confirmations = node('fieldset'); confirmations.className = 'menu-confirmations'; confirmations.append(node('legend','計画・出荷状態'));
