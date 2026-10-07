@@ -30,6 +30,9 @@ export function validateSheet(body) {
       if (row[field] !== null && (!Number.isSafeInteger(row[field]) || row[field] < 0)) throw new Error('単価・予定数・準備数は空欄または0以上の整数で入力してください。');
       next[field] = row[field];
     }
+    next.decision_bits = row.decision_bits === undefined ? 0 : row.decision_bits;
+    if (!Number.isInteger(next.decision_bits) || next.decision_bits < 0 || next.decision_bits > 7) throw new Error('確定状態は0〜7の整数です。');
+    if (next.decision_bits & 2 && next.price_yen === null || next.decision_bits & 4 && next.planned_quantity === null) throw new Error('未入力の単価・必要数は確定できません。');
     return next;
   });
   return {date,rows};
@@ -42,3 +45,5 @@ export function summarizeSheet(rows) {
   }
   return Object.fromEntries(Object.entries(result).map(([key,value])=>[key,{total:value.total.toString(),unknown:value.unknown}]));
 }
+
+export function decisionState(row,sku) { return (row.decision_bits ?? 0) | (sku?.photo_id ? 8 : 0); }
