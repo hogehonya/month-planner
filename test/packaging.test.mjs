@@ -118,12 +118,12 @@ test('日付・参照・数量・単価・重複行の不正値はおしなが�
 
 test('日付の確定bitsは既知値だけ確定でき、写真bitを拒否し保存再取得する',async()=> {
  const {post,get,handler}=setup();await post({packaging_condition:'2本袋'});
- const row={item_id:'item-14',sku_id:'real-001',price_yen:0,planned_quantity:0,prepared_quantity:null,decision_bits:7};
+ const row={item_id:'item-14',sku_id:'real-001',price_yen:0,planned_quantity:0,prepared_quantity:null,status_bits:7};
  const save=rows=>handler(new Request('https://planner.example/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_sheet',date:'2026-10-17',rows,etag:null})}));
- for(const bits of [-1,8,15,1.5,null,'7']) assert.equal((await save([{...row,decision_bits:bits}])).status,400);
+ for(const bits of [-1,8,15,1.5,null,'7']) assert.equal((await save([{...row,status_bits:bits}])).status,400);
  for(const patch of [{price_yen:null},{planned_quantity:null}]) assert.equal((await save([{...row,...patch}])).status,400);
  assert.equal((await save([row])).status,200);
- assert.equal((await (await get()).json()).sheets[0].rows[0].decision_bits,7);
+ assert.equal((await (await get()).json()).sheets[0].rows[0].status_bits,7);
  const other=setup();await other.post({});
  const invalid=await other.handler(new Request('https://planner.example/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_sheet',date:'2026-10-17',rows:[row],etag:null})}));
  assert.equal(invalid.status,400);
@@ -133,6 +133,17 @@ test('日付の確定bitsは既知値だけ確定でき、写真bitを拒否し�
 test('旧日付データのbit無しはGETで0になり、保存データを一括書換えしない',async()=> {
  const {data,get}=setup();const old={date:'2026-10-17',rows:[{item_id:'item-14',sku_id:'real-001',price_yen:null,planned_quantity:null,prepared_quantity:null}]};
  data.set('menu-sheets/2026-10-17.json',{data:old,etag:'legacy'});
- assert.equal((await (await get()).json()).sheets[0].rows[0].decision_bits,0);
- assert.equal(Object.hasOwn(data.get('menu-sheets/2026-10-17.json').data.rows[0],'decision_bits'),false);
+ assert.equal((await (await get()).json()).sheets[0].rows[0].status_bits,0);
+ assert.equal(Object.hasOwn(data.get('menu-sheets/2026-10-17.json').data.rows[0],'status_bits'),false);
+});
+
+
+test('出荷なし16は未入力値も保持して保存再取得でき、写真bit8などは拒否する',async()=> {
+ const {post,get,handler}=setup();await post({});
+ const row={item_id:'item-14',sku_id:'real-001',price_yen:null,planned_quantity:null,prepared_quantity:null,status_bits:16};
+ const save=rows=>handler(new Request('https://planner.example/',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'save_sheet',date:'2026-10-17',rows,etag:null})}));
+ for(const bits of [24,31,32,2147483648]) assert.equal((await save([{...row,status_bits:bits}])).status,400);
+ assert.equal((await save([row])).status,200);
+ assert.deepEqual((await (await get()).json()).sheets[0].rows[0],row);
+ assert.equal(Object.hasOwn((await (await get()).json()).sheets[0].rows[0],'decision_bits'),false);
 });

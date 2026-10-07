@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { summarizeSheet, validateSheet } from '../public/packaging-model.mjs';
 import { setupMenu, visibleMenuRows } from '../public/menu-sheet.mjs';
-const row = {item_id:'item-14',sku_id:'real-001',price_yen:100,planned_quantity:10,prepared_quantity:null,decision_bits:0};
+const row = {item_id:'item-14',sku_id:'real-001',price_yen:100,planned_quantity:10,prepared_quantity:null,status_bits:0};
 class Element {
   constructor(tag='') {this.tag=tag;this.children=[];this.listeners={};this.value='';this.dataset={};}
   append(...children){for(const child of children){this.children=this.children.filter(existing=>existing!==child);this.children.push(child);}}
@@ -305,28 +305,41 @@ test('確定は明示操作のみで0値を許可し、入力変更で対応bit�
  ui.menu.receive({...next,skus:next.skus.map(sku=>sku.id==='real-001'?{...sku,packaging_condition:''}:sku)});
  assert.equal(check(1).checked,false);assert.equal(check(1).disabled,true);
  assert.equal(find(card,el=>el.className==='menu-row-decision').textContent,'未決定');
- await ui.get('menu-form').listeners.submit(submit());assert.equal(ui.requests[0].rows[0].decision_bits,6);
+ await ui.get('menu-form').listeners.submit(submit());assert.equal(ui.requests[0].rows[0].status_bits,6);
 });
 
 test('決定と写真なしは独立して絞れ、コピーした日付の確定は0になる',async()=> {
  const filters={item:new Set(),cultivation:new Set(),price:new Set(),status:'decided'};
- const rows=[{...row,decision_bits:7},{...row,sku_id:'other',decision_bits:6}];
+ const rows=[{...row,status_bits:7},{...row,sku_id:'other',status_bits:6}];
  assert.equal(visibleMenuRows(rows,[],[],filters,'registered').length,1);
- filters.status='no-photo';assert.equal(visibleMenuRows(rows,[{item_id:'item-14',id:'other',photo_id:'photo'}],[],filters,'registered')[0].decision_bits,7);
- filters.status='undecided';assert.equal(visibleMenuRows(rows,[],[],filters,'registered')[0].decision_bits,6);
- const ui=setup();ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,packaging_condition:'2本袋'})),sheets:[{date:'2026-10-17',rows:[{...row,decision_bits:7}],etag:'v1'}]});
+ filters.status='no-photo';assert.equal(visibleMenuRows(rows,[{item_id:'item-14',id:'other',photo_id:'photo'}],[],filters,'registered')[0].status_bits,7);
+ filters.status='undecided';assert.equal(visibleMenuRows(rows,[],[],filters,'registered')[0].status_bits,6);
+ const ui=setup();ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,packaging_condition:'2本袋'})),sheets:[{date:'2026-10-17',rows:[{...row,status_bits:7}],etag:'v1'}]});
  ui.get('menu-new-date').value='2026-10-18';ui.get('menu-copy').checked=true;await ui.get('menu-add-date').listeners.submit(submit());
- assert.equal(ui.requests[0].rows[0].decision_bits,0);assert.equal(ui.requests[0].rows[0].planned_quantity,null);
+ assert.equal(ui.requests[0].rows[0].status_bits,0);assert.equal(ui.requests[0].rows[0].planned_quantity,null);
 });
 
 
 test('競合比較は同じ数量でも他者の各確定bitを表示し、入力側のbitを保持する',async()=> {
  const ui=setup(409);
- ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,packaging_condition:'2本袋'})),sheets:[{date:'2026-10-17',rows:[{...row,decision_bits:1}],etag:'v1'}]});
+ ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,packaging_condition:'2本袋'})),sheets:[{date:'2026-10-17',rows:[{...row,status_bits:1}],etag:'v1'}]});
  await ui.get('menu-form').listeners.submit(submit());
  await ui.get('menu-latest').listeners.click();
  const text=ui.get('menu-latest-rows').children[0].textContent;
  assert.match(text,/荷姿: 未確定/);assert.match(text,/単価: 未確定/);assert.match(text,/必要数: 未確定/);
  const card=ui.get('menu-rows').children[0];
  assert.equal(find(card,el=>el.dataset.bit==='1').checked,true);
+});
+
+test('出荷なしは元値を保持して合計から除外し、解除で戻り独立して絞れる',async()=> {
+ const ui=setup(),card=ui.get('menu-rows').children[0],check=find(card,el=>el.dataset.bit==='16');
+ assert.equal(check.disabled,false);check.checked=true;check.listeners.change();
+ assert.match(find(card,el=>el.className==='menu-row-decision').textContent,/出荷なし/);
+ assert.match(ui.get('menu-total-scope').textContent,/出荷対象 0件/);
+ assert.match(ui.get('menu-summary').children[0].textContent,/合計: 0/);
+ assert.match(ui.get('menu-amount-summary').children[0].textContent,/合計: 0円/);
+ ui.get('menu-decision-filter').value='no-shipment';ui.get('menu-decision-filter').listeners.change();assert.equal(card.hidden,false);
+ check.checked=false;check.listeners.change();assert.match(ui.get('menu-summary').children[0].textContent,/10/);
+ check.checked=true;check.listeners.change();await ui.get('menu-form').listeners.submit(submit());
+ assert.equal(ui.requests[0].rows[0].status_bits,16);assert.equal(ui.requests[0].rows[0].planned_quantity,10);assert.equal(ui.requests[0].rows[0].price_yen,100);
 });

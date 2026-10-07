@@ -1,5 +1,5 @@
 import { summarizeSheet, decisionState } from './packaging-model.mjs';
-const cloneRows = rows=>rows.map(row=>({...row,decision_bits:row.decision_bits ?? 0}));
+const cloneRows = rows=>rows.map(row=>({...row,status_bits:row.status_bits ?? 0}));
 const numberValue = input=>input.value.trim() === '' ? null : Number(input.value);
 const format = value=>BigInt(value).toLocaleString('ja-JP');
 export function visibleMenuRows(rows,skus,items,filters,sort) {
@@ -8,7 +8,7 @@ export function visibleMenuRows(rows,skus,items,filters,sort) {
   return rows.map((row,index)=>({row,index})).filter(({row})=> {
     const cultivation = skuMap.get(`${row.item_id}/${row.sku_id}`)?.cultivation_method ?? 'unknown';
     const bits = decisionState(row,skuMap.get(`${row.item_id}/${row.sku_id}`));
-    const matchesStatus = !filters.status || filters.status === 'undecided' && (bits & 7) !== 7 || filters.status === 'decided' && (bits & 7) === 7 || filters.status === 'no-photo' && !(bits & 8);
+    const matchesStatus = !filters.status || filters.status === 'undecided' && (bits & 7) !== 7 || filters.status === 'decided' && (bits & 7) === 7 || filters.status === 'no-photo' && !(bits & 8) || filters.status === 'no-shipment' && !!(bits & 16);
     return matchesStatus && (!filters.item.size || filters.item.has(row.item_id)) && (!filters.cultivation.size || filters.cultivation.has(cultivation)) && (!filters.price.size || filters.price.has('unknown') && row.price_yen === null || filters.price.has('range') && row.price_yen !== null && row.price_yen >= 200 && row.price_yen <= 500);
   }).sort((a,b)=> {
     if (sort === 'item') return (itemMap.get(a.row.item_id) ?? a.row.item_id).localeCompare(itemMap.get(b.row.item_id) ?? b.row.item_id,'ja') || a.index-b.index;
@@ -118,14 +118,16 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
   }
   function summary() {
     $('menu-summary').replaceChildren(); $('menu-amount-summary').replaceChildren();
+    const included = rows.filter(row=>!((row.status_bits ?? 0) & 16));
+    $('menu-total-scope').textContent = `出荷対象 ${included.length}件の合計（選択日全体・出荷なしを除外）`;
     const totals = summarizeSheet(rows);
     for (const [key,label,unit] of [['planned_quantity','必要数',''],['prepared_quantity','準備済み',''],['planned_amount','予定売価','円'],['prepared_amount','準備済み売価','円']]) {
       const value = totals[key], target = $(key.endsWith('amount') ? 'menu-amount-summary' : 'menu-summary');
-      if (rows.length && value.unknown === rows.length) { target.append(node('p',`${label}: 未入力（${value.unknown}件）`)); continue; }
+      if (included.length && value.unknown === included.length) { target.append(node('p',`${label}: 未入力（${value.unknown}件）`)); continue; }
       target.append(node('p',`${label}${value.unknown ? '（既知分小計）' : '合計'}: ${format(value.total)}${unit}${value.unknown ? ` ／未入力 ${value.unknown}件` : ''}`));
     }
   }
-  function confirmable(row,sku,bit) { return bit === 1 ? !!sku?.packaging_condition?.trim() : row[bit === 2 ? 'price_yen' : 'planned_quantity'] !== null; }
+  function confirmable(row,sku,bit) { return bit === 16 ? true : bit === 1 ? !!sku?.packaging_condition?.trim() : row[bit === 2 ? 'price_yen' : 'planned_quantity'] !== null; }
   function updateCard(row,refs) {
     const sku = source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id);
     const item = source.items.find(item=>item.id === row.item_id);
@@ -133,9 +135,9 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     const badge = node('span',({organic:'有機',conventional:'慣行'})[sku?.cultivation_method] ?? '未確認'); badge.className = 'cultivation-badge';
     refs.card.dataset.cultivation = cultivationVisual(badge,sku?.cultivation_method);
     refs.tags.replaceChildren(node('span',item?.name ?? row.item_id),badge);
-    if (row.decision_bits & 1 && !sku?.packaging_condition?.trim()) { row.decision_bits &= ~1; dirty = true; status('荷姿が未入力のため確定を解除しました。販売準備表を保存してください。'); }
+    if (row.status_bits & 1 && !sku?.packaging_condition?.trim()) { row.status_bits &= ~1; dirty = true; status('荷姿が未入力のため確定を解除しました。販売準備表を保存してください。'); }
     const bits = decisionState(row,sku);
-    refs.decision.textContent = `${(bits & 7) === 7 ? '決定' : '未決定'}${!(bits & 8) ? '・写真なし' : ''}`;
+    refs.decision.textContent = `${(bits & 7) === 7 ? '決定' : '未決定'}${!(bits & 8) ? '・写真なし' : ''}${bits & 16 ? '・出荷なし' : ''}`;
     for (const [bit,check] of refs.checks) { check.checked = !!(bits & bit); check.disabled = busy || !confirmable(row,sku,bit); }
     const condition = sku?.packaging_condition || '荷姿未確認';
     const type = sku?.type && !skuName(row).includes(sku.type) ? `${sku.type} ／ ` : '';
@@ -166,7 +168,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
       for (const [key,label] of [['price_yen','単価（円）'],['planned_quantity','必要数'],['prepared_quantity','準備済み']]) {
         const wrapper = node('label',label), input = node('input'); input.dataset.field = key; refs.inputs.push(input); input.type = 'number'; input.min = '0'; input.step = '1'; input.max = String(Number.MAX_SAFE_INTEGER); input.value = row[key] === null ? '' : String(row[key]); input.disabled = busy;
         input.addEventListener('input',()=> {
-          if (key === 'price_yen' || key === 'planned_quantity') row.decision_bits &= ~(key === 'price_yen' ? 2 : 4);
+          if (key === 'price_yen' || key === 'planned_quantity') row.status_bits &= ~(key === 'price_yen' ? 2 : 4);
           dirty = true; status('未保存の変更があります。');
           const value = numberValue(input);
           if (input.validity?.badInput || value !== null && (!Number.isSafeInteger(value) || value < 0)) { input.setCustomValidity('0以上の安全な整数を入力してください。'); row[key] = null; updateDecision(); summary(); updateState(); return; }
@@ -175,17 +177,17 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
       }
       function updateDecision() {
         const sku = source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id), bits = decisionState(row,sku);
-        decision.textContent = `${(bits & 7) === 7 ? '決定' : '未決定'}${!(bits & 8) ? '・写真なし' : ''}`;
+        decision.textContent = `${(bits & 7) === 7 ? '決定' : '未決定'}${!(bits & 8) ? '・写真なし' : ''}${bits & 16 ? '・出荷なし' : ''}`;
         for (const [bit,check] of refs.checks) { check.checked = !!(bits & bit); check.disabled = busy || !confirmable(row,sku,bit); }
       }
-      const confirmations = node('fieldset'); confirmations.className = 'menu-confirmations'; confirmations.append(node('legend','計画の確定'));
-      for (const [bit,label] of [[1,'荷姿を確定'],[2,'単価を確定'],[4,'必要数を確定']]) {
+      const confirmations = node('fieldset'); confirmations.className = 'menu-confirmations'; confirmations.append(node('legend','計画・出荷状態'));
+      for (const [bit,label] of [[1,'荷姿を確定'],[2,'単価を確定'],[4,'必要数を確定'],[16,'出荷なし']]) {
         const wrapper = node('label'), check = node('input'); check.type = 'checkbox'; check.dataset.bit = String(bit); refs.checks.push([bit,check]);
         check.addEventListener('change',()=> {
           const sku = source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id);
           if (!confirmable(row,sku,bit)) { check.checked = false; return; }
-          row.decision_bits = check.checked ? row.decision_bits | bit : row.decision_bits & ~bit;
-          dirty = true; updateDecision(); status('未保存の確定変更があります。');
+          row.status_bits = check.checked ? row.status_bits | bit : row.status_bits & ~bit;
+          dirty = true; updateDecision(); summary(); status('未保存の状態変更があります。');
         }); wrapper.append(check,node('span',label)); confirmations.append(wrapper);
       }
       updateDecision(); updateState(); detail.append(condition,confirmations,media); refs.cells.push(state); card.append(fields,state,detail); $('menu-rows').append(card);
@@ -202,9 +204,9 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     for (const row of ordered) if (rowKey(row) !== detailKey) $('menu-rows').append(cards.get(rowKey(row)).card);
     if (detailKey && cards.has(detailKey)) cards.get(detailKey).card.hidden = false;
     const labels = [...filters.item].map(id=>source.items.find(item=>item.id===id)?.name ?? id).concat([...filters.cultivation].map(key=>({organic:'有機',conventional:'慣行',unknown:'未確認'})[key]),[...filters.price].map(key=>key === 'range' ? '200〜500円' : '価格未定'));
-    if (filters.status) labels.push(({undecided:'未決定',decided:'決定','no-photo':'写真なし'})[filters.status]);
+    if (filters.status) labels.push(({undecided:'未決定',decided:'決定','no-photo':'写真なし','no-shipment':'出荷なし'})[filters.status]);
     $('menu-filter-summary').textContent = `絞り込み・並び替え：${visible.length}/${rows.length}件・${labels.join('・') || '全件'} ／ ${({'registered':'登録順',item:'品目順','price-asc':'安い順','price-desc':'高い順','planned-desc':'必要数が多い順'})[sort]}`;
-    $('menu-count').textContent = `${visible.length}件表示 ／全${rows.length}件（日付全体の合計）`;
+    $('menu-count').textContent = `${visible.length}件表示 ／全${rows.length}件（合計は出荷対象）`;
     $('menu-no-match').hidden = visible.length > 0 || !rows.length;
   }
   function renderTags() {
@@ -264,7 +266,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     event.preventDefault(); if (!canLeave()) return;
     const date = $('menu-new-date').value;
     if (source.sheets.some(sheet=>sheet.date === date)) { status('その日付は登録済みです。予定日から選んでください。'); return; }
-    const nextRows = $('menu-copy').checked ? rows.map(row=>({...row,planned_quantity:null,prepared_quantity:null,decision_bits:0})) : [];
+    const nextRows = $('menu-copy').checked ? rows.map(row=>({...row,planned_quantity:null,prepared_quantity:null,status_bits:0})) : [];
     return persist(date,nextRows,null,true);
   });
   $('menu-add-sku').addEventListener('submit',event=> {
@@ -272,7 +274,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     if (!$('menu-form').reportValidity()) { status('単価・数量の入力を確認してください。入力は保持しています。'); return; }
     const sku = source.skus.find(sku=>`${sku.item_id}/${sku.id}` === $('menu-sku').value); if (!sku) return;
     if (rows.some(row=>row.item_id === sku.item_id && row.sku_id === sku.id)) { status('このSKUは追加済みです。'); return; }
-    rows.push({item_id:sku.item_id,sku_id:sku.id,price_yen:sku.price_yen ?? null,planned_quantity:null,prepared_quantity:null,decision_bits:0}); dirty = true; renderRows(); status('SKUを追加しました。販売準備表を保存してください。');
+    rows.push({item_id:sku.item_id,sku_id:sku.id,price_yen:sku.price_yen ?? null,planned_quantity:null,prepared_quantity:null,status_bits:0}); dirty = true; renderRows(); status('SKUを追加しました。販売準備表を保存してください。');
   });
   $('menu-latest').addEventListener('click',async()=> {
     if (busy) return; busy = true; controls();
@@ -281,8 +283,8 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
       if (!latest) throw new Error('対象の日付を読み込めませんでした。');
       etag = latest.etag; $('menu-latest-rows').replaceChildren();
       for (const row of latest.rows) {
-        const confirmed = [[1,'荷姿'],[2,'単価'],[4,'必要数']].map(([bit,label])=>`${label}: ${(row.decision_bits ?? 0) & bit ? '確定' : '未確定'}`).join(' ／ ');
-        $('menu-latest-rows').append(node('p',`${skuName(row)}：単価 ${row.price_yen ?? '未入力'}円 ／予定 ${row.planned_quantity ?? '未入力'} ／準備 ${row.prepared_quantity ?? '未入力'} ／ ${confirmed}`));
+        const confirmed = [[1,'荷姿'],[2,'単価'],[4,'必要数']].map(([bit,label])=>`${label}: ${(row.status_bits ?? 0) & bit ? '確定' : '未確定'}`).join(' ／ ');
+        $('menu-latest-rows').append(node('p',`${skuName(row)}：単価 ${row.price_yen ?? '未入力'}円 ／予定 ${row.planned_quantity ?? '未入力'} ／準備 ${row.prepared_quantity ?? '未入力'} ／ ${confirmed} ／ 出荷: ${(row.status_bits ?? 0) & 16 ? 'なし' : '対象'}`));
       }
       $('menu-conflict-view').hidden = false; $('menu-conflict-view').open = true;
       conflict = false; $('menu-latest').hidden = true; status('最新状態を表示しました。入力は保持しています。比較・確認して保存すると入力内容で上書きします。');

@@ -30,20 +30,20 @@ export function validateSheet(body) {
       if (row[field] !== null && (!Number.isSafeInteger(row[field]) || row[field] < 0)) throw new Error('単価・予定数・準備数は空欄または0以上の整数で入力してください。');
       next[field] = row[field];
     }
-    next.decision_bits = row.decision_bits === undefined ? 0 : row.decision_bits;
-    if (!Number.isInteger(next.decision_bits) || next.decision_bits < 0 || next.decision_bits > 7) throw new Error('確定状態は0〜7の整数です。');
-    if (next.decision_bits & 2 && next.price_yen === null || next.decision_bits & 4 && next.planned_quantity === null) throw new Error('未入力の単価・必要数は確定できません。');
+    next.status_bits = row.status_bits === undefined ? 0 : row.status_bits;
+    if (!Number.isInteger(next.status_bits) || next.status_bits < 0 || next.status_bits > 23 || (next.status_bits & ~23) !== 0) throw new Error('状態は荷姿1・単価2・必要数4・出荷なし16だけの整数です。');
+    if (next.status_bits & 2 && next.price_yen === null || next.status_bits & 4 && next.planned_quantity === null) throw new Error('未入力の単価・必要数は確定できません。');
     return next;
   });
   return {date,rows};
 }
 export function summarizeSheet(rows) {
   const result = Object.fromEntries(['planned_quantity','prepared_quantity','planned_amount','prepared_amount'].map(key=>[key,{total:0n,unknown:0}]));
-  for (const row of rows) for (const [quantity,amount] of [['planned_quantity','planned_amount'],['prepared_quantity','prepared_amount']]) {
+  for (const row of rows.filter(row=>!((row.status_bits ?? 0) & 16))) for (const [quantity,amount] of [['planned_quantity','planned_amount'],['prepared_quantity','prepared_amount']]) {
     if (row[quantity] === null) result[quantity].unknown++; else result[quantity].total += BigInt(row[quantity]);
     if (row[quantity] === null || row.price_yen === null) result[amount].unknown++; else result[amount].total += BigInt(row[quantity]) * BigInt(row.price_yen);
   }
   return Object.fromEntries(Object.entries(result).map(([key,value])=>[key,{total:value.total.toString(),unknown:value.unknown}]));
 }
 
-export function decisionState(row,sku) { return (row.decision_bits ?? 0) | (sku?.photo_id ? 8 : 0); }
+export function decisionState(row,sku) { return (row.status_bits ?? 0) | (sku?.photo_id ? 8 : 0); }
