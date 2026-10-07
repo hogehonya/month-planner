@@ -436,3 +436,46 @@ test('残りはラベルと数量を分け、未確認・完了と表の読み�
  ui.get('menu-layout-table').listeners.click();
  assert.equal(remaining.role,'cell');assert.equal(remaining.textContent,'残り 0・準備完了');
 });
+
+
+test('カード見出しの末尾区分だけを省き、品種との重複と元SKU名を保護する',()=> {
+ const ui=setup();
+ for (const suffix of ['（有機）','（慣行）','(有機)','(慣行)']) {
+  const name=`青首ダイコン${suffix}`;
+  ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,name,type:'青首'}))});
+  let card=ui.get('menu-rows').children[0],identity=find(card,el=>el.className==='menu-row-identity');
+  assert.equal(identity.children[1].textContent,'青首');
+  assert.equal(find(card,el=>el.className==='menu-variety').hidden,true);
+  assert.equal(ui.source.skus[0].name,'大根');
+  ui.get('menu-layout-table').listeners.click();
+  assert.equal(identity.children[1].textContent,name);
+  assert.equal(find(card,el=>el.className==='menu-variety').hidden,false);
+  ui.get('menu-layout-card').listeners.click();
+  find(card,el=>el.className==='menu-detail-link').listeners.click();
+  assert.equal(ui.get('menu-detail-title').textContent,name);
+  ui.get('menu-detail-back').listeners.click();
+ }
+});
+
+test('固有SKU名と異なる品種・未確認、内側の区分文字を落とさない',()=> {
+ const ui=setup();
+ for (const [name,type,expected] of [['農園特選（有機）青首（慣行）','青首','農園特選（有機）青首'],['農園特選（有機）','別品種','農園特選'],['特別商品（慣行）','','特別商品']]) {
+  ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,name,type}))});
+  const card=ui.get('menu-rows').children[0],identity=find(card,el=>el.className==='menu-row-identity'),variety=find(card,el=>el.className==='menu-variety');
+  assert.equal(identity.children[1].textContent,expected);
+  assert.equal(identity.children[1].hidden,false);
+  assert.equal(variety.textContent,`品種・種類 ${type || '未確認'}`);
+  assert.equal(variety.hidden,Boolean(type && expected.includes(type)));
+ }
+});
+
+test('固定写真枠は未登録でも既存SKU編集に到達し、写真保存後は実写真を表示する',()=> {
+ const ui=setup(),card=ui.get('menu-rows').children[0],thumbnail=find(card,el=>el.className==='menu-row-thumbnail');
+ assert.equal(thumbnail.children[0].textContent,'写真を追加');
+ thumbnail.listeners.click();assert.equal(ui.edits[0].sku.id,'real-001');
+ const planned=input(ui,1);planned.value='1.5';planned.listeners.input();
+ ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,photo_id:'existing-photo'}))});
+ assert.equal(input(ui,1),planned);assert.equal(planned.value,'1.5');
+ assert.equal(thumbnail.children[0].src,'/.netlify/functions/packaging?photo=existing-photo');
+ assert.equal(thumbnail['aria-label'],'大根の写真を変更');
+});

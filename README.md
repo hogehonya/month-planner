@@ -104,3 +104,7 @@ Issue #72（2026-10-08、ユーザー「カードのレイアウト修正して�
 LAN配置のCI・デプロイ手順は[LANデプロイ](docs/local-deployment.md)を参照してください。コンテナの `APP_REVISION` はビルド引数で設定でき、実行時の環境変数でも指定できます。
 
 Docker・Compose・CIは共通の`local-runtime/healthcheck.mjs`で正規Hostとrevisionを検証します。ローカルHTTPへのHost指定にはNodeのHTTPクライアントを使用します。
+
+Issue #77（2026-10-08、ユーザー「button is too big」「card layout is no good」「is no need to kanko/yuki on cardtitle」「doubled information in one card」）：一覧カードは小さな区分編集と品目、品種・固有SKU名、荷姿、数量、状態・補助操作の順にまとめる。カード見出しの末尾「（有機）」「（慣行）」（半角括弧も対象）は表示上だけ省き、元SKU名は詳細・表で確認できる。品種を含むSKU名では別の品種表示を省き、品目と品種だけの名前は品種だけにまとめる。品種未確認と固有の商品名は保持する。全日付共通の説明は一覧で一度、詳細で再確認できる。アコーディオンを開くと荷姿は展開側だけに表示する。栽培タブの余白と枠を軽くし、44pxの操作領域・16px文字・色と形の識別を維持する。配置はAgent判断であり、API・マスタの値を変更しない。
+
+同Issueの追加要求「photo placeholder in card」「becuase of fix layout」：カード左上に常時同じ72px正方形の写真操作枠を確保し、登録済み写真を比率維持で表示する。未登録は「写真を追加」の枠から既存SKU編集へ移動する。写真の有無・読み込みで商品と数量の位置を変えず、架空写真は作らない。写真なしの状態文字はカードでは重ねず、状態判定・フィルタと表・詳細の写真表示を維持する。
