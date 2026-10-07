@@ -21,9 +21,10 @@ function setup(failure=null,view=null) {
   let saveFailure=failure;
   const api=async (body,query)=>{
     if (query) return {comments:[]};
-    if (!body) return {sheets};
+    if (!body) return {...source,sheets};
     requests.push(body);
     if(saveFailure)throw Object.assign(new Error('保存失敗'),{status:saveFailure});
+    if(body.action==='save_sku') { source.skus=source.skus.map(sku=>sku.id===body.id&&sku.item_id===body.item_id?{...sku,cultivation_method:body.cultivation_method,etag:'sku-v2'}:sku);return {ok:true}; }
     if(body.action==='add_sku_comment')return {comment:{id:body.comment_id,content:body.content,created_at:'2026-10-08T00:00:00Z'}};
     const sheet={date:body.date,rows:body.rows,etag:'v2'};
     sheets=[...sheets.filter(s=>s.date!==body.date),sheet];return {ok:true,sheet};
@@ -360,6 +361,27 @@ test('出荷なしは元値を保持して合計から除外し、解除で戻�
 });
 
 
+test('一覧の栽培変更はSKUだけETag保存し、不正数量・確定と表示行を保持する',async()=> {
+ const ui=setup();ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,etag:'sku-v1',type:'品種',note:'備考',cultivation_method:'organic',photo_id:'photo'})),sheets:[{date:'2026-10-17',rows:[{...row,status_bits:2}],etag:'v1'}]});
+ const card=ui.get('menu-rows').children[0],planned=inputIn(card,1);planned.value='1.5';planned.listeners.input();
+ ui.get('menu-cultivation-tabs').children.find(tab=>tab.textContent==='有機').click();
+ const select=find(card,el=>el.className==='menu-cultivation-select');select.value='conventional';
+ await select.listeners.change();
+ assert.equal(ui.requests.length,1);assert.equal(ui.requests[0].action,'save_sku');assert.equal(ui.requests[0].etag,'sku-v1');
+ assert.equal(ui.requests[0].cultivation_method,'conventional');assert.equal(ui.requests[0].type,'品種');assert.equal(ui.requests[0].note,'備考');
+ assert.equal(ui.requests[0].photo,null);assert.equal(find(card,el=>el.dataset.bit==='2').checked,true);assert.equal(card.dataset.cultivation,'conventional');assert.equal(card.hidden,false);
+ assert.equal(inputIn(card,1),planned);assert.equal(planned.value,'1.5');assert.ok(planned.validation);
+ assert.match(ui.get('menu-status').textContent,/全日付共通/);
+});
+
+test('一覧栽培の保存失敗・競合は元区分へ戻し、再試行できる',async()=> {
+ const ui=setup(409),card=ui.get('menu-rows').children[0],select=find(card,el=>el.className==='menu-cultivation-select');
+ select.value='organic';await select.listeners.change();
+ assert.equal(select.value,'unknown');assert.equal(select.disabled,false);assert.equal(card.dataset.cultivation,'unknown');
+ assert.match(ui.get('menu-status').textContent,/入力は保持/);assert.equal(ui.requests.length,1);
+ ui.setFailure(null);select.value='organic';await select.listeners.change();assert.equal(card.dataset.cultivation,'organic');
+});
+
 test('コメント追記は編集中の確定・出荷なし・数量入力を保存せず保持する',async()=>{
  const ui=setup();find(ui.get('menu-rows').children[0],el=>el.className==='menu-detail-link').click();
  const card=ui.get('menu-detail-row').children[0],price=inputIn(card,0),check=bit=>find(card,el=>el.dataset.bit===String(bit));
@@ -369,4 +391,15 @@ test('コメント追記は編集中の確定・出荷なし・数量入力を�
  await ui.get('sku-comment-submit').listeners.click();
  assert.equal(ui.requests.length,1);assert.equal(ui.requests[0].action,'add_sku_comment');assert.equal(price.value,'00100');assert.equal(check(2).checked,true);assert.equal(check(16).checked,true);
  await ui.get('menu-form').listeners.submit(submit());assert.equal(ui.requests[1].action,'save_sheet');assert.equal(ui.requests[1].rows[0].status_bits,18);
+});
+
+test('栽培変更後も未送信コメントと不正数量を保持し、日付移動・再受信を防ぐ',async()=> {
+ const ui=setup();find(ui.get('menu-rows').children[0],el=>el.className==='menu-detail-link').click();
+ const card=ui.get('menu-detail-row').children[0],planned=inputIn(card,1),content=ui.get('sku-comment-content');
+ planned.value='1.5';planned.listeners.input();content.value='未送信の連絡';content.listeners.input();
+ const select=find(card,el=>el.className==='menu-cultivation-select');select.value='organic';await select.listeners.change();
+ assert.equal(content.value,'未送信の連絡');assert.equal(inputIn(card,1),planned);assert.equal(planned.value,'1.5');assert.ok(planned.validation);
+ assert.equal(ui.menu.canLeave(),false);assert.match(ui.get('sku-comment-message').textContent,/未送信/);
+ ui.menu.receive(ui.source);assert.equal(inputIn(card,1),planned);assert.equal(content.value,'未送信の連絡');
+ await ui.get('sku-comment-submit').listeners.click();assert.equal(ui.requests.at(-1).action,'add_sku_comment');assert.equal(content.value,'');assert.equal(planned.value,'1.5');
 });

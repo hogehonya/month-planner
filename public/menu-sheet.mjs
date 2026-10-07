@@ -22,7 +22,7 @@ export function visibleMenuRows(rows,skus,items,filters,sort) {
     return a.index-b.index;
   }).map(({row})=>row);
 }
-export function setupMenu(document,api,editSKU = ()=>{}) {
+export function setupMenu(document,api,editSKU = ()=>{},onSKUChanged = ()=>{}) {
   const $ = id=>document.getElementById(id);
   const node = (tag,text)=> { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; };
   let source = {items:[],skus:[],sheets:[]}, selected = '', rows = [], etag = null, dirty = false, busy = false, conflict = false;
@@ -118,7 +118,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     }
   }
   const status = text=> { $('menu-status').textContent = text; };
-  const canLeave = ()=> { if (!comments.canLeave()) return false; if (dirty || busy) { status('未保存の販売準備表があります。保存してから移動・再読込してください。'); return false; } return true; };
+  const canLeave = ()=> { if (!comments.canLeave()) return false; if (dirty || busy || [...cards.values()].some(refs=>refs.cultivationBusy)) { status('未保存の販売準備表があります。保存してから移動・再読込してください。'); return false; } return true; };
   const skuName = row=>source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id)?.name ?? row.sku_id;
   function controls() {
     $('menu-save').disabled = !selected || busy || conflict;
@@ -139,12 +139,44 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     }
   }
   function confirmable(row,sku,bit) { return bit === 16 ? true : bit === 1 ? !!sku?.packaging_condition?.trim() : row[bit === 2 ? 'price_yen' : 'planned_quantity'] !== null; }
+  function updateMaster(next) {
+    source = {...next,sheets:next.sheets ?? []};
+    for (const row of rows) { const refs = cards.get(rowKey(row)); if (refs) updateCard(row,refs); }
+    onSKUChanged(next);
+  }
+  async function saveCultivation(row,refs,method) {
+    const sku = source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id);
+    if (!sku || busy || refs.cultivationBusy) return;
+    refs.cultivationBusy = true; refs.cultivationSelect.disabled = true; status('全日付共通の栽培方法を保存中…');
+    let saved = false;
+    try {
+      await api({action:'save_sku',item_id:sku.item_id,id:sku.id,name:sku.name,type:sku.type ?? '',note:sku.note ?? '',cultivation_method:method,etag:sku.etag ?? null,photo:null});
+      saved = true; source.skus = source.skus.map(current=>current === sku ? {...current,cultivation_method:method} : current);
+      updateMaster(await api());
+      status('全日付共通の栽培方法を保存しました。数量・確定の入力は保持しています。絞り込みは再適用で更新します。');
+    } catch(e) {
+      if (e.status === 409) {
+        try { updateMaster(await api()); } catch { /* 入力と直前の保存済み区分を保持する */ }
+      }
+      const current = source.skus.find(current=>current.item_id === row.item_id && current.id === row.sku_id);
+      refs.cultivationSelect.value = ['organic','conventional'].includes(current?.cultivation_method) ? current.cultivation_method : 'unknown';
+      status(saved ? '栽培方法は保存しましたが最新データを取得できませんでした。入力は保持しています。区分を選び直して再試行してください。' : `${e.message} 栽培方法は保存できませんでした。保存済みの区分に戻しました。入力は保持しています。再試行できます。`);
+    } finally { refs.cultivationBusy = false; updateCard(row,refs); }
+  }
   function updateCard(row,refs) {
     const sku = source.skus.find(sku=>sku.item_id === row.item_id && sku.id === row.sku_id);
     const item = source.items.find(item=>item.id === row.item_id);
     refs.title.textContent = skuName(row);
-    const badge = node('span',({organic:'有機',conventional:'慣行'})[sku?.cultivation_method] ?? '未確認'); badge.className = 'cultivation-badge';
+    const badge = node('span'); badge.className = 'cultivation-badge';
     refs.card.dataset.cultivation = cultivationVisual(badge,sku?.cultivation_method);
+    if (!refs.cultivationSelect) {
+      const select = node('select'); select.className = 'menu-cultivation-select';
+      for (const [value,label] of [['organic','有機'],['conventional','慣行'],['unknown','未確認']]) { const option = node('option',label); option.value = value; select.append(option); }
+      select.addEventListener('change',()=>saveCultivation(row,refs,select.value)); refs.cultivationSelect = select;
+    }
+    refs.cultivationSelect.value = refs.card.dataset.cultivation; refs.cultivationSelect.disabled = busy || !!refs.cultivationBusy;
+    refs.cultivationSelect.setAttribute('aria-label',`${skuName(row)}の栽培方法（全日付共通）`);
+    badge.append(refs.cultivationSelect,node('small','全日付共通'));
     refs.tags.replaceChildren(node('span',item?.name ?? row.item_id),badge);
     if (row.status_bits & 1 && !sku?.packaging_condition?.trim()) { row.status_bits &= ~1; dirty = true; status('荷姿が未入力のため確定を解除しました。販売準備表を保存してください。'); }
     const bits = decisionState(row,sku);
@@ -254,7 +286,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
   }
   function receive(next) {
     source = {...next,sheets:next.sheets ?? []};
-    if (dirty || busy || comments.pending()) {
+    if (dirty || busy || comments.pending() || [...cards.values()].some(refs=>refs.cultivationBusy)) {
       for (const row of rows) { const refs = cards.get(`${row.item_id}/${row.sku_id}`); if (refs) updateCard(row,refs); }
       return;
     }
