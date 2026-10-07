@@ -20,9 +20,10 @@ function setup(failure=null,view=null) {
   let sheets=[{date:'2026-10-17',rows:[{...row}],etag:'v1'}];
   let saveFailure=failure;
   const api=async body=>{
-    if (!body) return {sheets};
+    if (!body) return {...source,sheets};
     requests.push(body);
     if(saveFailure)throw Object.assign(new Error('保存失敗'),{status:saveFailure});
+    if(body.action==='save_sku') { source.skus=source.skus.map(sku=>sku.id===body.id&&sku.item_id===body.item_id?{...sku,cultivation_method:body.cultivation_method,etag:'sku-v2'}:sku);return {ok:true}; }
     const sheet={date:body.date,rows:body.rows,etag:'v2'};
     sheets=[...sheets.filter(s=>s.date!==body.date),sheet];return {ok:true,sheet};
   };
@@ -342,4 +343,26 @@ test('出荷なしは元値を保持して合計から除外し、解除で戻�
  check.checked=false;check.listeners.change();assert.match(ui.get('menu-summary').children[0].textContent,/10/);
  check.checked=true;check.listeners.change();await ui.get('menu-form').listeners.submit(submit());
  assert.equal(ui.requests[0].rows[0].status_bits,16);assert.equal(ui.requests[0].rows[0].planned_quantity,10);assert.equal(ui.requests[0].rows[0].price_yen,100);
+});
+
+
+test('一覧の栽培変更はSKUだけETag保存し、不正数量・確定と表示行を保持する',async()=> {
+ const ui=setup();ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>({...sku,etag:'sku-v1',type:'品種',note:'備考',cultivation_method:'organic',photo_id:'photo'})),sheets:[{date:'2026-10-17',rows:[{...row,status_bits:2}],etag:'v1'}]});
+ const card=ui.get('menu-rows').children[0],planned=inputIn(card,1);planned.value='1.5';planned.listeners.input();
+ ui.get('menu-cultivation-tabs').children.find(tab=>tab.textContent==='有機').click();
+ const select=find(card,el=>el.className==='menu-cultivation-select');select.value='conventional';
+ await select.listeners.change();
+ assert.equal(ui.requests.length,1);assert.equal(ui.requests[0].action,'save_sku');assert.equal(ui.requests[0].etag,'sku-v1');
+ assert.equal(ui.requests[0].cultivation_method,'conventional');assert.equal(ui.requests[0].type,'品種');assert.equal(ui.requests[0].note,'備考');
+ assert.equal(ui.requests[0].photo,null);assert.equal(find(card,el=>el.dataset.bit==='2').checked,true);assert.equal(card.dataset.cultivation,'conventional');assert.equal(card.hidden,false);
+ assert.equal(inputIn(card,1),planned);assert.equal(planned.value,'1.5');assert.ok(planned.validation);
+ assert.match(ui.get('menu-status').textContent,/全日付共通/);
+});
+
+test('一覧栽培の保存失敗・競合は元区分へ戻し、再試行できる',async()=> {
+ const ui=setup(409),card=ui.get('menu-rows').children[0],select=find(card,el=>el.className==='menu-cultivation-select');
+ select.value='organic';await select.listeners.change();
+ assert.equal(select.value,'unknown');assert.equal(select.disabled,false);assert.equal(card.dataset.cultivation,'unknown');
+ assert.match(ui.get('menu-status').textContent,/入力は保持/);assert.equal(ui.requests.length,1);
+ ui.setFailure(null);select.value='organic';await select.listeners.change();assert.equal(card.dataset.cultivation,'organic');
 });

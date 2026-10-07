@@ -9,7 +9,7 @@ async function api(body) {
   if (!response.ok) throw Object.assign(new Error(result.error || '通信に失敗しました。'),{status:response.status});
   return result;
 }
-const menu = setupMenu(document,api,(item,sku)=>open(item,sku));
+const menu = setupMenu(document,api,(item,sku)=>open(item,sku),next=> { data = next; render(); });
 function render() {
   const selected = $('filter').value;
   $('items').replaceChildren();
