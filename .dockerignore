@@ -1,0 +1,11 @@
+*
+!package.json
+!package-lock.json
+!public
+!public/**
+!netlify
+!netlify/functions
+!netlify/functions/**
+!local-runtime
+!local-runtime/**
+!netlify.toml

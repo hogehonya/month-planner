@@ -20,3 +20,13 @@
 - `/packaging.html`: 販売準備表・荷姿写真マスタ（`packaging.mjs`、`menu-sheet.mjs`、`packaging-model.mjs`、`packaging.css`）。`/.netlify/functions/packaging` で日付別販売準備表・共通SKU・写真を読み書き。
 
 - `/packaging.html#sku=品目ID%2FSKU_ID`: 販売準備表の独立詳細ビュー。同じフォームの入力を保持し、一覧へ戻る／ブラウザ履歴で復帰。
+
+- `local-runtime/server.mjs`: LAN配置用の静的配信・既存API接続・`/healthz`。
+- `local-runtime/store.mjs`: 独立した永続ディスクストア。運用条件は `local-runtime/README.md`。
+- `Dockerfile`: 非rootのLANコンテナ。`/app/data` を永続化。
+- `docs/local-deployment.md`: LAN版のCI・デプロイ運用。
+- `.woodpecker.yml`: テスト・commit SHA付きコンテナビルド・mainのLANデプロイ。
+- `docker-compose.yml`: LAN版コンテナ・永続領域・Traefik接続・healthcheck。
+- `config.env.example`: LAN版の非機密設定。APP_REVISIONはCIが追記。
+- `ops/README.md`: ホスト運用設定の索引。
+- `ops/month-planner-secrets-only.conf`: Infisicalの秘密値準備だけを行うsystemd override。
