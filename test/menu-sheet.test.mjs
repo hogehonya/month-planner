@@ -14,7 +14,7 @@ class Element {
   setCustomValidity(value){this.validation=value;}
   reportValidity(){return !this.validation && this.children.every(child=>child.reportValidity());}
 }
-function setup(failure=null) {
+function setup(failure=null,view=null) {
   const elements = new Map(), requests=[], edits=[];
   const get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
   let sheets=[{date:'2026-10-17',rows:[{...row}],etag:'v1'}];
@@ -27,7 +27,7 @@ function setup(failure=null) {
     sheets=[...sheets.filter(s=>s.date!==body.date),sheet];return {ok:true,sheet};
   };
   get('menu-form').append(get('menu-rows'));
-  const menu=setupMenu({getElementById:get,createElement:tag=>new Element(tag)},api,(item,sku)=>edits.push({item,sku}));
+  const menu=setupMenu({defaultView:view,getElementById:get,createElement:tag=>new Element(tag)},api,(item,sku)=>edits.push({item,sku}));
   const source={items:[{id:'item-14',name:'ダイコン'}],skus:[{item_id:'item-14',id:'real-001',name:'大根',price_yen:100},{item_id:'item-01',id:'sample',name:'サンプル',price_yen:200}],sheets};
   menu.receive(source);
   return {get,menu,requests,edits,setFailure:value=>{saveFailure=value;},source};
@@ -109,7 +109,7 @@ test('全件未入力の数量・金額は0合計と表示しない',()=> {
 
 test('おしながきに対応SKUの写真を表示し、未登録から編集できる',()=> {
   const ui=setup(), card=ui.get('menu-rows').children[0];
-  assert.equal(card.children.find(child=>child.className==='menu-card-tags').children[0].textContent,'ダイコン');
+  assert.equal(find(card,child=>child.className==='menu-card-tags').children[0].textContent,'ダイコン');
   const media=find(card,child=>child.className==='menu-row-photo');
   assert.equal(media.children[0].textContent,'写真未登録');
   media.children[1].listeners.click();
@@ -242,4 +242,27 @@ test('栽培タブは矢印・Home・Endで選択し、未確認もアクセス�
   assert.equal(ui.get('menu-rows').children[0].hidden,false);
   key(tabs()[3],'Home');assert.equal(tabs()[0]['aria-selected'],'true');
   key(tabs()[0],'ArrowLeft');assert.equal(tabs()[3]['aria-selected'],'true');
+});
+
+
+test('表は列見出し・行・セルを持ち、詳細とカードでは表の意味を外す',()=> {
+ const ui=setup(), card=ui.get('menu-rows').children[0];
+ ui.get('menu-layout-table').click();
+ assert.equal(ui.get('menu-table').role,'table'); assert.equal(ui.get('menu-table-head').hidden,false);
+ assert.equal(card.role,'row');assert.equal(find(card,el=>el.className==='menu-row-identity').role,'cell');
+ find(card,el=>el.className==='menu-detail-link').click();assert.equal(card.role,'article');
+ ui.get('menu-detail-back').click();assert.equal(card.role,'row');
+ ui.get('menu-layout-card').click();assert.equal(card.role,'article');assert.equal(ui.get('menu-table-head').hidden,true);
+});
+
+test('不正入力で詳細を閉じると履歴も一覧へ戻り、再描画で詳細を再開しない',()=> {
+ const listeners={}, location={hash:'',pathname:'/packaging.html',search:''};
+ const view={location,addEventListener:(name,fn)=>{listeners[name]=fn;},history:{state:null,
+ pushState(state,title,url){this.state=state;location.hash=url;},
+ replaceState(state,title,url){this.state=state;location.hash=url.includes('#')?url.slice(url.indexOf('#')):'';}}};
+ const ui=setup(null,view),card=ui.get('menu-rows').children[0],price=inputIn(card,0);
+ find(card,el=>el.className==='menu-detail-link').click();assert.match(location.hash,/#sku=/);
+ price.value='1.5';price.listeners.input();ui.get('menu-form').listeners.invalid({target:price});
+ assert.equal(location.hash,'');assert.equal(view.history.state,null);assert.equal(ui.get('menu-detail-view').hidden,true);
+ listeners.popstate();listeners.hashchange();assert.equal(ui.get('menu-detail-view').hidden,true);assert.equal(price.value,'1.5');
 });

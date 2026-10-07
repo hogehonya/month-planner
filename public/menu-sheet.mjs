@@ -33,7 +33,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     $('menu-detail-view').hidden = !detailKey;
     $('menu-master').hidden = Boolean(detailKey);
     $('menu-list-controls').hidden = Boolean(detailKey);
-    $('menu-rows').hidden = Boolean(detailKey);
+    $('menu-panel').hidden = Boolean(detailKey);
     if (detailKey) {
       const refs = cards.get(detailKey);
       refs.card.hidden = false; refs.wasOpen = refs.detail.open; refs.detail.open = true;
@@ -46,6 +46,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
       applyView();
       if (focus) detailOrigin?.focus?.();
     }
+    applyLayout();
   }
   function routeDetail() {
     const hash = view?.location.hash ?? '';
@@ -65,15 +66,29 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
   view?.addEventListener('popstate',routeDetail);
   view?.addEventListener('hashchange',routeDetail);
   for (const mode of ['table','card']) $('menu-layout-'+mode).addEventListener('click',()=> {
-    layout = mode; $('menu-rows').dataset.layout = mode;
+    layout = mode; applyLayout();
     for (const value of ['table','card']) $('menu-layout-'+value).setAttribute('aria-pressed',String(value === mode));
   });
+  function applyLayout() {
+    const table = layout === 'table';
+    $('menu-rows').dataset.layout = layout;
+    $('menu-table').setAttribute('role',table ? 'table' : 'presentation');
+    $('menu-table').setAttribute('aria-label','販売準備表');
+    $('menu-table-head').hidden = !table;
+    $('menu-table-head').setAttribute('role','row');
+    $('menu-rows').setAttribute('role',table ? 'rowgroup' : 'presentation');
+    for (const refs of cards.values()) {
+      const inTable = table && rowKey(refs.row) !== detailKey;
+      refs.card.setAttribute('role',inTable ? 'row' : 'article');
+      for (const cell of refs.cells) cell.setAttribute('role',inTable ? 'cell' : 'presentation');
+    }
+  }
   function renderTabs() {
     const container = $('menu-cultivation-tabs'); container.replaceChildren();
     for (const [key,label] of [['','全件'],['organic','有機'],['conventional','慣行'],['unknown','未確認']]) {
       const button = node('button',label); button.type = 'button'; button.setAttribute('role','tab');
       const active = key ? filters.cultivation.has(key) : !filters.cultivation.size;
-      button.setAttribute('aria-selected',String(active)); button.setAttribute('aria-controls','menu-rows'); button.tabIndex = active ? 0 : -1;
+      button.setAttribute('aria-selected',String(active)); button.setAttribute('aria-controls','menu-panel'); button.tabIndex = active ? 0 : -1;
       button.addEventListener('click',()=> { filters.cultivation.clear(); if (key) filters.cultivation.add(key); renderTabs(); applyView(); [...container.children].find(tab=>tab.textContent === label)?.focus?.(); });
       button.addEventListener('keydown',event=> {
         const tabs = [...container.children], index = tabs.indexOf(button);
@@ -126,9 +141,9 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
       const card = node('article'); card.className = 'menu-row';
       const title = node('h3'), info = node('p'), media = node('div'), tags = node('div'), detail = node('details'), condition = node('p');
       detail.className = 'menu-row-detail'; detail.append(node('summary','写真・単価・荷姿詳細')); tags.className = 'menu-card-tags'; media.className = 'menu-row-photo';
-      info.className = 'menu-row-info'; card.append(title,info);
-      const link = node('button','詳細を開く'); link.type = 'button'; link.className = 'menu-detail-link'; link.addEventListener('click',()=>openDetail(rowKey(row),link)); card.append(link);
-      const refs = {title,info,media,tags,card,detail,condition,link,inputs:[]}; cards.set(`${row.item_id}/${row.sku_id}`,refs); updateCard(row,refs);
+      info.className = 'menu-row-info'; const identity = node('div'); identity.className = 'menu-row-identity'; identity.append(title,info); card.append(identity);
+      const link = node('button','詳細を開く'); link.type = 'button'; link.className = 'menu-detail-link'; link.addEventListener('click',()=>openDetail(rowKey(row),link)); identity.append(tags,link);
+      const refs = {title,info,media,tags,card,detail,condition,link,row,cells:[identity,detail],inputs:[]}; cards.set(`${row.item_id}/${row.sku_id}`,refs); updateCard(row,refs);
       const state = node('p'); state.className = 'menu-row-state';
       const updateState = ()=> { state.textContent = row.planned_quantity === null || row.prepared_quantity === null ? '残り 未確認' : row.prepared_quantity >= row.planned_quantity ? '残り 0・準備完了' : `残り ${row.planned_quantity-row.prepared_quantity}`; };
       const fields = node('div'); fields.className = 'menu-row-fields';
@@ -139,12 +154,12 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
           const value = numberValue(input);
           if (input.validity?.badInput || value !== null && (!Number.isSafeInteger(value) || value < 0)) { input.setCustomValidity('0以上の安全な整数を入力してください。'); row[key] = null; summary(); updateState(); return; }
           input.setCustomValidity(''); row[key] = value; dirty = true; status('未保存の変更があります。'); summary(); updateState();
-        }); wrapper.append(input); if (key === 'price_yen') detail.append(wrapper); else fields.append(wrapper);
+        }); wrapper.append(input); if (key === 'price_yen') detail.append(wrapper); else { fields.append(wrapper); refs.cells.push(wrapper); }
       }
-      updateState(); detail.append(condition,media); card.append(tags,fields,state,detail); $('menu-rows').append(card);
+      updateState(); detail.append(condition,media); refs.cells.push(state); card.append(fields,state,detail); $('menu-rows').append(card);
     }
     if (!rows.length) $('menu-rows').append(node('p',selected ? '登録済みSKUを選んで追加してください。' : '日付を追加してください。'));
-    summary(); controls(); renderTags(); renderTabs(); applyView(); $('menu-rows').dataset.layout = layout;
+    summary(); controls(); renderTags(); renderTabs(); applyView(); applyLayout();
     if (view?.location.hash.startsWith('#sku=')) routeDetail();
   }
   function applyView() {
