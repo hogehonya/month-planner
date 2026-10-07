@@ -50,7 +50,8 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     refs.title.textContent = skuName(row);
     refs.tags.replaceChildren(node('span',item?.name ?? row.item_id),node('span',({organic:'有機',conventional:'慣行'})[sku?.cultivation_method] ?? '未確認'));
     const condition = sku?.packaging_condition || '荷姿未確認';
-    refs.info.textContent = `${sku?.type || '品種未確認'} ／ ${condition.length > 36 ? condition.slice(0,36)+'…' : condition}`;
+    const type = sku?.type && !skuName(row).includes(sku.type) ? `${sku.type} ／ ` : '';
+    refs.info.textContent = `${type}${condition.length > 36 ? condition.slice(0,36)+'…' : condition}`;
     refs.condition.textContent = `荷姿：${condition}`;
     refs.media.replaceChildren();
     if (sku?.photo_id) {
@@ -93,7 +94,7 @@ export function setupMenu(document,api,editSKU = ()=>{}) {
     const ordered = [...visible,...rows.filter(row=>!shown.has(row))];
     for (const row of ordered) $('menu-rows').append(cards.get(`${row.item_id}/${row.sku_id}`).card);
     const labels = [...filters.item].map(id=>source.items.find(item=>item.id===id)?.name ?? id).concat([...filters.cultivation].map(key=>({organic:'有機',conventional:'慣行',unknown:'未確認'})[key]),[...filters.price].map(key=>key === 'range' ? '200〜500円' : '価格未定'));
-    $('menu-filter-summary').textContent = `絞り込み・並び替え：${labels.join('・') || '全件'} ／ ${({'registered':'登録順',item:'品目順','price-asc':'安い順','price-desc':'高い順','planned-desc':'必要数が多い順'})[sort]}`;
+    $('menu-filter-summary').textContent = `絞り込み・並び替え：${visible.length}/${rows.length}件・${labels.join('・') || '全件'} ／ ${({'registered':'登録順',item:'品目順','price-asc':'安い順','price-desc':'高い順','planned-desc':'必要数が多い順'})[sort]}`;
     $('menu-count').textContent = `${visible.length}件表示 ／全${rows.length}件（日付全体の合計）`;
     $('menu-no-match').hidden = visible.length > 0 || !rows.length;
   }

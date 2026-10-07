@@ -192,3 +192,16 @@ test('残りは有効数量のみ計算し、未入力・不正値を未確認�
  assert.equal(ui.get('menu-rows').children[0].hidden,false);
  assert.equal(detail.open,true);assert.equal(price.value,'1.5');assert.ok(price.validation);
 });
+
+
+test('閉じた絞り込みsummaryに件数を表示し、商品名にある品種を重複しない',()=> {
+ const ui=setup();
+ ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>sku.id==='real-001'?{...sku,name:'大根 青首 慣行',type:'青首',packaging_condition:'2本袋'}:sku)});
+ assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-row-info').textContent,'2本袋');
+ assert.match(ui.get('menu-filter-summary').textContent,/1\/1件/);
+ ui.get('menu-price-tags').children.find(button=>button.textContent==='200〜500円').listeners.click();
+ assert.match(ui.get('menu-filter-summary').textContent,/0\/1件/);assert.equal(ui.get('menu-no-match').hidden,false);
+ ui.get('menu-clear-filters').listeners.click();
+ ui.menu.receive({...ui.source,skus:ui.source.skus.map(sku=>sku.id==='real-001'?{...sku,type:'青首',packaging_condition:'2本袋'}:sku)});
+ assert.equal(find(ui.get('menu-rows').children[0],el=>el.className==='menu-row-info').textContent,'青首 ／ 2本袋');
+});
