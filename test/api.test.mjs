@@ -10,6 +10,10 @@ function setup() {
     failHistory: false, forceConflict: false,
     async getWithMetadata(key) { return data.has(key) ? structuredClone(data.get(key)) : null; },
     async get(key) { return structuredClone(data.get(key)?.data ?? null); },
+    async set(key, value, options = {}) {
+      if (store.failPhoto) throw new Error('photo failed');
+      const etag = String(++version); data.set(key, { data: value, metadata: options.metadata, etag }); return { modified: true, etag };
+    },
     async setJSON(key, value, options = {}) {
       if (store.failHistory && key.startsWith('history/')) throw new Error('unavailable');
       const old = data.get(key);
@@ -24,7 +28,8 @@ function setup() {
   const post = body => handler(new Request('https://planner.example/.netlify/functions/planner', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin, ...body }) }));
   const get = (commentDate = '2026-10-05') => handler(new Request('https://planner.example/.netlify/functions/planner?start=2026-10-01&end=2026-10-31' + (commentDate === null ? '' : '&comment_date=' + commentDate)));
   const save = (field, value) => post(field === 'note' ? { action: 'save', editor_name: 'テスト編集者', entry_date: '2026-10-05', field, value } : { action: 'save_slot', editor_name: 'テスト編集者', entry_date: '2026-10-05', slot: field, title: value, content: value + '内容' });
-  return { store, data, handler, post, get, save };
+  const photo = (bytes, mime = 'image/png', patch = {}, slot = 'slot1', date = '2026-10-05') => handler(new Request(`https://planner.example/.netlify/functions/planner?action=upload_photo&entry_date=${date}&slot=${slot}`, { method: 'POST', headers: { 'Content-Type': mime, 'X-Edit-Pin': pin, 'X-Editor-Name': encodeURIComponent('写真編集者'), ...patch }, body: bytes }));
+  return { store, data, handler, post, get, save, photo };
 }
 
 test('閲覧は公開・キャッシュ禁止、PINは検証して応答へ含めない', async () => {
@@ -159,6 +164,58 @@ test('追加予定取込は日数・重複・項目制限とリクエストサ�
   assert.equal((await post({ ...body, entries: [{ ...entry, note: 'x'.repeat(262144) }] })).status, 413); assert.equal(data.size, 0);
 });
 
+const pngPhoto = Buffer.from('89504e470d0a1a0a0000000049454e44ae426082', 'hex');
+const jpegPhoto = Buffer.from('ffd8ffe00001ffd9', 'hex');
+const webpPhoto = Buffer.from('524946461000000057454250565038200400000000000000', 'hex');
+test('午前午後の写真を保存・公開し、差替えと同値再送で予定を保持する', async () => {
+  const { photo, handler, data, get, post } = setup();
+  await post({ action: 'save_slot', editor_name: '名前', entry_date: '2026-10-05', slot: 'slot1', title: '見出し', content: '内容' });
+  const first = await photo(pngPhoto); assert.equal(first.status, 200);
+  const result = await first.json(); assert.match(result.row.slot1_photo.id, /^[a-f0-9]{64}$/);
+  assert.equal(result.row.slot1_title, '見出し'); assert.equal(result.row.slot1_content, '内容'); assert.equal(result.row.slot2_photo, null);
+  const response = await handler(new Request('https://planner.example' + result.row.slot1_photo.url));
+  assert.equal(response.status, 200); assert.equal(response.headers.get('Content-Type'), 'image/png');
+  assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff'); assert.deepEqual(Buffer.from(await response.arrayBuffer()), pngPhoto);
+  const before = (await (await get()).json()).history.length;
+  await photo(pngPhoto); assert.equal((await (await get()).json()).history.length, before);
+  assert.equal((await photo(jpegPhoto, 'image/jpeg')).status, 200);
+  const row = (await (await get()).json()).entries.find(row => row.entry_date === '2026-10-05');
+  assert.notEqual(row.slot1_photo.id, result.row.slot1_photo.id); assert.equal(row.slot1_title, '見出し');
+  assert.equal((await photo(webpPhoto, 'image/webp', {}, 'slot2')).status, 200);
+  const both = (await (await get()).json()).entries.find(row => row.entry_date === '2026-10-05');
+  assert.equal(both.slot1_photo.mime, 'image/jpeg'); assert.equal(both.slot2_photo.mime, 'image/webp');
+  await post({ action: 'import_entries', editor_name: '名前', entries: [{ entry_date: '2026-10-05', note: '新備考' }] });
+  const imported = (await (await get()).json()).entries.find(row => row.entry_date === '2026-10-05');
+  assert.deepEqual(imported.slot1_photo, both.slot1_photo); assert.deepEqual(imported.slot2_photo, both.slot2_photo);
+  assert.equal((await handler(new Request('https://planner.example/.netlify/functions/planner?photo=invalid'))).status, 400);
+  assert.equal((await handler(new Request('https://planner.example/.netlify/functions/planner?photo=' + '0'.repeat(64)))).status, 404);
+  assert.ok(data.size > 0);
+});
+test('写真のMIME・signature・上限・認証を検証し、失敗で前画像と予定を保持する', async () => {
+  const { photo, data, store } = setup();
+  await photo(pngPhoto); const previous = structuredClone(data.get('entries/2026-10-05.json'));
+  for (const [bytes, mime, status] of [[pngPhoto, 'image/svg+xml', 415], [pngPhoto, 'image/jpeg', 400], [Buffer.from('not an image'), 'image/png', 400], [Buffer.alloc(2 * 1024 * 1024 + 1), 'image/png', 413], [Buffer.alloc(0), 'image/png', 400]]) {
+    assert.equal((await photo(bytes, mime)).status, status); assert.deepEqual(data.get('entries/2026-10-05.json'), previous);
+  }
+  assert.equal((await photo(pngPhoto, 'image/png', { 'X-Edit-Pin': 'wrong' })).status, 401);
+  assert.equal((await photo(pngPhoto, 'image/png', { Origin: 'https://other.example' })).status, 403);
+  assert.equal((await photo(pngPhoto, 'image/png', {}, 'slot3')).status, 400);
+  assert.equal((await photo(pngPhoto, 'image/png', {}, 'slot1', '2026-02-30')).status, 400);
+  store.failPhoto = true; assert.equal((await photo(jpegPhoto, 'image/jpeg')).status, 503);
+  assert.deepEqual(data.get('entries/2026-10-05.json'), previous);
+  store.failPhoto = false; store.forceConflict = true;
+  assert.equal((await photo(jpegPhoto, 'image/jpeg')).status, 409); assert.deepEqual(data.get('entries/2026-10-05.json'), previous);
+});
+
+test('写真保存の履歴転記失敗でも保存済みを返し、PIN未設定は書込拒否する', async () => {
+  const { photo, store, get, data } = setup(); store.failHistory = true;
+  const result = await (await photo(pngPhoto)).json(); assert.equal(result.ok, true); assert.equal(result.history_saved, false);
+  store.failHistory = false; await get();
+  const history = [...data.keys()].filter(key => key.startsWith('history/')); assert.equal(history.length, 1);
+  await photo(pngPhoto); assert.equal([...data.keys()].filter(key => key.startsWith('history/')).length, 1);
+  const handler = createHandler({ getPin: () => '', getStore: () => { throw new Error('not reached'); } });
+  assert.equal((await handler(new Request('https://planner.example/?action=upload_photo', { method: 'POST', headers: { 'Content-Type': 'image/png', 'X-Edit-Pin': 'unused' }, body: pngPhoto }))).status, 503);
+});
 
 test('コメントは公開閲覧・PIN投稿・追記のみで予定を保持し、再送は重複しない', async () => {
   const { post, get, save, data } = setup();
