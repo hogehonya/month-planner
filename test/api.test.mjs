@@ -26,7 +26,7 @@ function setup() {
   const pin = randomUUID();
   const handler = createHandler({ getStore: () => store, getPin: () => pin, sleep: async () => {} });
   const post = body => handler(new Request('https://planner.example/.netlify/functions/planner', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin, ...body }) }));
-  const get = () => handler(new Request('https://planner.example/.netlify/functions/planner?start=2026-10-01&end=2026-10-31'));
+  const get = (commentDate = '2026-10-05') => handler(new Request('https://planner.example/.netlify/functions/planner?start=2026-10-01&end=2026-10-31' + (commentDate === null ? '' : '&comment_date=' + commentDate)));
   const save = (field, value) => post(field === 'note' ? { action: 'save', editor_name: 'テスト編集者', entry_date: '2026-10-05', field, value } : { action: 'save_slot', editor_name: 'テスト編集者', entry_date: '2026-10-05', slot: field, title: value, content: value + '内容' });
   const photo = (bytes, mime = 'image/png', patch = {}, slot = 'slot1', date = '2026-10-05') => handler(new Request(`https://planner.example/.netlify/functions/planner?action=upload_photo&entry_date=${date}&slot=${slot}`, { method: 'POST', headers: { 'Content-Type': mime, 'X-Edit-Pin': pin, 'X-Editor-Name': encodeURIComponent('写真編集者'), ...patch }, body: bytes }));
   return { store, data, handler, post, get, save, photo };
@@ -215,4 +215,67 @@ test('写真保存の履歴転記失敗でも保存済みを返し、PIN未設�
   await photo(pngPhoto); assert.equal([...data.keys()].filter(key => key.startsWith('history/')).length, 1);
   const handler = createHandler({ getPin: () => '', getStore: () => { throw new Error('not reached'); } });
   assert.equal((await handler(new Request('https://planner.example/?action=upload_photo', { method: 'POST', headers: { 'Content-Type': 'image/png', 'X-Edit-Pin': 'unused' }, body: pngPhoto }))).status, 503);
+});
+
+test('コメントは公開閲覧・PIN投稿・追記のみで予定を保持し、再送は重複しない', async () => {
+  const { post, get, save, data } = setup();
+  await save('note', '保持する備考');
+  const before = structuredClone(data.get('entries/2026-10-05.json'));
+  const body = { action: 'add_comment', editor_name: '投稿者', entry_date: '2026-10-05', id: randomUUID(), content: '<script>本文</script>\n連絡' };
+  assert.equal((await post({ ...body, pin: 'wrong' })).status, 401);
+  assert.equal((await post(body)).status, 200);
+  assert.equal((await post(body)).status, 200);
+  assert.equal((await post({ ...body, content: '変更' })).status, 409);
+  const view = await (await get()).json();
+  const row = view.entries.find(row => row.entry_date === body.entry_date);
+  assert.equal(row.comments.length, 1);
+  assert.equal(row.comments[0].content, body.content);
+  assert.equal(row.comments[0].editor_name, '投稿者');
+  assert.ok(row.comments[0].created_at);
+  assert.deepEqual(data.get('entries/2026-10-05.json'), before);
+  assert.equal(Object.hasOwn(view.entries.find(row => row.entry_date === '2026-10-06'), 'comments'), false);
+});
+
+test('コメントは不正な日付・ID・本文を拒否し、別投稿を失わない', async () => {
+  const { post, get, data } = setup();
+  const body = { action: 'add_comment', editor_name: '投稿者', entry_date: '2026-10-05', id: randomUUID(), content: '連絡' };
+  for (const patch of [{ id: '../bad' }, { id: null }, { entry_date: '2026-02-30' }, { content: ' ' }, { content: 1 }, { content: '文'.repeat(3001) }, { editor_name: '' }]) {
+    assert.equal((await post({ ...body, ...patch })).status, 400);
+    assert.equal(data.size, 0);
+  }
+  const results = await Promise.all([post(body), post({ ...body, id: randomUUID(), content: '別の連絡' })]);
+  assert.ok(results.every(response => response.status === 200));
+  const row = (await (await get()).json()).entries.find(row => row.entry_date === body.entry_date);
+  assert.equal(row.comments.length, 2);
+});
+
+
+test('コメント取得は選択日だけ1回一覧取得し、範囲外の日付を拒否する', async () => {
+  const { get, store } = setup();
+  const prefixes = []; const list = store.list;
+  store.list = options => { prefixes.push(options.prefix); return list(options); };
+  let view = await (await get()).json();
+  assert.deepEqual(prefixes.filter(prefix => prefix.startsWith('comments/')), ['comments/2026-10-05/']);
+  assert.deepEqual(view.entries.find(row => row.entry_date === '2026-10-05').comments, []);
+  prefixes.length = 0; view = await (await get(null)).json();
+  assert.equal(prefixes.filter(prefix => prefix.startsWith('comments/')).length, 0);
+  assert.ok(view.entries.every(row => !Object.hasOwn(row, 'comments')));
+  assert.equal((await get('2026-11-01')).status, 400);
+  assert.equal((await get('not-a-date')).status, 400);
+});
+
+
+test('月間全週の56日GETは隣接月の保存値・時間割・コメントを返し57日は拒否する', async () => {
+  const { handler, post, data } = setup();
+  data.set('settings/base.json', { data: { base: { ...DEFAULT_BASE, dates: { '2026-07-19': { slot1: '隣接月の時間割' } } } }, etag: 'base' });
+  assert.equal((await post({ action: 'save', editor_name: '編集者', entry_date: '2026-09-12', field: 'note', value: '隣接月の予定' })).status, 200);
+  const read = end => handler(new Request(`https://planner.example/.netlify/functions/planner?start=2026-07-19&end=${end}&comment_date=2026-09-12`));
+  const response = await read('2026-09-12');
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.entries.length, 56);
+  assert.equal(body.entries[0].slot1, '隣接月の時間割');
+  assert.equal(body.entries.at(-1).note, '隣接月の予定');
+  assert.deepEqual(body.entries.at(-1).comments, []);
+  assert.equal((await read('2026-09-13')).status, 400);
 });

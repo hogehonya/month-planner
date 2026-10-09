@@ -1,0 +1,50 @@
+steps:
+  test:
+    image: node:24-alpine
+    commands:
+      - npm ci
+      - npm test
+      - npm run check
+
+  build-push:
+    image: docker:cli
+    environment:
+      GITEA_USERNAME:
+        from_secret: gitea_username
+      GITEA_TOKEN:
+        from_secret: gitea_token
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    commands:
+      - export DOCKER_CONFIG=/tmp/month-planner-docker
+      - printf '%s' "$${GITEA_TOKEN}" | docker login gitea.honya.dev --username "$${GITEA_USERNAME}" --password-stdin
+      - docker build --build-arg APP_REVISION=${CI_COMMIT_SHA} -t gitea.honya.dev/honya-dev-web-app-month-planner/app:${CI_COMMIT_SHA} .
+      - docker push gitea.honya.dev/honya-dev-web-app-month-planner/app:${CI_COMMIT_SHA}
+    when:
+      - branch: main
+        event: [push, manual]
+
+  deploy:
+    image: docker:cli
+    environment:
+      GITEA_USERNAME:
+        from_secret: gitea_username
+      GITEA_TOKEN:
+        from_secret: gitea_token
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/honya/month-planner:/home/honya/month-planner
+      - /run/infisical/month-planner:/run/infisical/month-planner:ro
+    commands:
+      - test -s /run/infisical/month-planner/secrets.env
+      - cp docker-compose.yml /home/honya/month-planner/docker-compose.yml
+      - cp config.env.example /home/honya/month-planner/config.env
+      - printf '\nAPP_REVISION=%s\n' '${CI_COMMIT_SHA}' >> /home/honya/month-planner/config.env
+      - export DOCKER_CONFIG=/tmp/month-planner-docker
+      - printf '%s' "$${GITEA_TOKEN}" | docker login gitea.honya.dev --username "$${GITEA_USERNAME}" --password-stdin
+      - docker compose --project-name month-planner --project-directory /home/honya/month-planner --env-file /home/honya/month-planner/config.env --env-file /run/infisical/month-planner/secrets.env pull
+      - docker compose --project-name month-planner --project-directory /home/honya/month-planner --env-file /home/honya/month-planner/config.env --env-file /run/infisical/month-planner/secrets.env up -d --wait --wait-timeout 90
+      - docker exec month-planner node local-runtime/healthcheck.mjs '${CI_COMMIT_SHA}'
+    when:
+      - branch: main
+        event: [push, manual]
