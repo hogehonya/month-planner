@@ -43,7 +43,7 @@ function setMode() {
   $('auth').hidden = !editingRequested || authenticated;
   $('edit-link').hidden = editingRequested;
   $('logout').hidden = !authenticated;
-  $('mode').textContent = authenticated ? `${editor}として編集中 · コマは保存ボタン、備考は自動保存` : '閲覧専用 · 3秒ごとに同期';
+  $('mode').textContent = authenticated ? `${editor}として編集中 · コマは保存ボタン、備考は自動保存` : '閲覧専用 · 30秒ごとに同期';
   for (const slot of slots.values()) { slot.button.textContent = authenticated ? '見出し・内容を編集' : '編集する'; slot.button.disabled = importBusy; }
   for (const cell of cells.values()) { cell.input.hidden = !editingRequested; cell.input.readOnly = !authenticated || importBusy; cell.display.hidden = editingRequested; }
 }
@@ -398,4 +398,18 @@ $('comment-form').onsubmit = async event => {
   finally { commentBusy = false; writeEpoch++; setMode(); }
 };
 
-buildMonth(); sync(); setInterval(() => sync(), 3000);
+let syncTimer = null;
+function scheduleSync() {
+  if (syncTimer !== null) clearInterval(syncTimer);
+  syncTimer = null;
+  if (document.visibilityState === 'visible') {
+    syncTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') sync();
+    }, 30_000);
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') sync();
+  scheduleSync();
+});
+buildMonth(); sync(); scheduleSync();
