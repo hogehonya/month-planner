@@ -1,5 +1,6 @@
 import { PHOTO_LIMIT } from './packaging-model.mjs';
 import { setupMenu } from './menu-sheet.mjs';
+import { setupOnlineSync } from './online-sync.mjs';
 const $ = id => document.getElementById(id), endpoint = '/.netlify/functions/packaging';
 let data = { items: [], skus: [] }, editing = null, busy = false;
 function node(tag, text) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; return el; }
@@ -10,6 +11,10 @@ async function api(body,query = '') {
   return result;
 }
 const menu = setupMenu(document,api,(item,sku)=>open(item,sku),next=> { data = next; render(); });
+const onlineSync = setupOnlineSync(document, {
+  canStart: () => !busy && !$('sku-dialog').open && menu.canLeave(),
+  refresh: async () => { await load(true); if (!$('sku-comments')?.hidden) $('sku-comment-reload')?.click(); },
+});
 function render() {
   const selected = $('filter').value;
   $('items').replaceChildren();
@@ -34,9 +39,9 @@ function render() {
     $('items').append(section);
   }
 }
-async function load() {
-  try { const next = await api(); data = next; menu.receive(next); const value = $('filter').value; $('filter').replaceChildren(new Option('全品目',''),...data.items.map(item=>new Option(item.name,item.id))); $('filter').value = value; render(); $('status').textContent = '読み込みました。'; }
-  catch(e) { $('status').textContent = e.message; }
+async function load(propagate = false) {
+  try { const next = await api(); data = next; menu.receive(next); onlineSync.receive(next); const value = $('filter').value; $('filter').replaceChildren(new Option('全品目',''),...data.items.map(item=>new Option(item.name,item.id))); $('filter').value = value; render(); $('status').textContent = '読み込みました。'; }
+  catch(e) { $('status').textContent = e.message; if (propagate) throw e; }
 }
 function setCultivation(method) {
   const toggle = $('sku-cultivation');
