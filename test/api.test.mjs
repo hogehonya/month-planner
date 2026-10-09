@@ -279,3 +279,29 @@ test('月間全週の56日GETは隣接月の保存値・時間割・コメント
   assert.deepEqual(body.entries.at(-1).comments, []);
   assert.equal((await read('2026-09-13')).status, 400);
 });
+
+
+test('未保存環境は架空サンプルを表示するだけで共有ストアへ書き込まない', async () => {
+  const { data, get } = setup();
+  const view = await (await get()).json();
+  assert.equal(view.entries.find(row => row.entry_date === '2026-10-01').slot1, '定例作業');
+  assert.equal(view.entries.find(row => row.entry_date === '2026-10-08').slot2, '買い物');
+  assert.equal(view.base_etag, null);
+  assert.equal(data.size, 0);
+});
+
+test('サンプルは保存済み基本予定・個別予定・明示的な空欄を上書きしない', async () => {
+  const { data, get } = setup();
+  data.set('entries/2026-10-01.json', { data: { slot1: '', note: '保存済み備考', slot1_title: '保存済み見出し' }, etag: 'entry' });
+  let view = await (await get()).json();
+  assert.equal(view.entries[0].slot1, '');
+  assert.equal(view.entries[0].note, '保存済み備考');
+  assert.equal(view.entries[0].slot1_title, '保存済み見出し');
+  const base = { slots: DEFAULT_BASE.slots, weekdays: {}, dates: {} };
+  data.set('settings/base.json', { data: { base }, etag: 'base' });
+  const before = structuredClone([...data]);
+  view = await (await get()).json();
+  assert.deepEqual(view.base, base);
+  assert.equal(view.entries.find(row => row.entry_date === '2026-10-08').slot2, '');
+  assert.deepEqual([...data], before);
+});

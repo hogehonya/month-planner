@@ -15,7 +15,7 @@ const commentsByDate = new Map();
 let commentBusy = false, commentComposing = false, commentId = null, commentAttempt = null;
 const dates = () => monthCalendarRange(month);
 const formatTime = value => value ? new Date(value).toLocaleString('ja-JP') : '';
-const fieldLabel = field => field === 'base' ? '時間割' : field === 'note' ? '備考' : base.slots[field.startsWith('slot1') ? 0 : 1].label;
+const fieldLabel = field => field === 'base' ? '基本予定' : field === 'note' ? '備考' : base.slots[field.startsWith('slot1') ? 0 : 1].label;
 async function request(body, query = '') {
   let options;
   if (body?.action === 'upload_photo') {
@@ -186,7 +186,7 @@ function updateSlot(slot, row) {
   if (!slot) return;
   const info = base.slots[slot.field === 'slot1' ? 0 : 1];
   slot.td.dataset.label = info.label + (info.time ? `（${info.time}）` : '');
-  slot.timetable.textContent = row[slot.field] || '時間割なし';
+  slot.timetable.textContent = row[slot.field] || '基本予定なし';
   slot.titleValue = row[slot.field + '_title']; slot.contentValue = row[slot.field + '_content'];
   slot.title.textContent = slot.titleValue; slot.content.textContent = slot.contentValue;
   slot.photo = row[slot.field + '_photo'];
@@ -206,7 +206,7 @@ function openSlot(slot) {
   const info = base.slots[slot.field === 'slot1' ? 0 : 1];
   const period = slot.field === 'slot1' ? '午前' : '午後';
   $('dialog-heading').textContent = `${slot.date} ${period}${info.label === period ? '' : `（${info.label}）`}を編集`;
-  $('dialog-timetable').textContent = `時間割：${slot.timetable.textContent}${info.time ? `（${info.time}）` : ''}`;
+  $('dialog-timetable').textContent = `基本予定：${slot.timetable.textContent}${info.time ? `（${info.time}）` : ''}`;
   $('slot-title').value = slot.titleValue; $('slot-content').value = slot.contentValue;
   $('dialog-message').textContent = ''; $('dialog-auth-message').textContent = ''; $('dialog-auth').hidden = true; $('dialog-pin').value = ''; $('dialog-save').disabled = false;
   $('slot-dialog').showModal(); $('slot-title').focus();

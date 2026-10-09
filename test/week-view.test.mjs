@@ -66,10 +66,11 @@ test('前後月は重複日を保持せず対象月の1日を選び、未送信�
 });
 
 
-test('表示切替を前提・現状・一手の静的3項目へ置き換える',()=> {
+test('前提・現状・一手は共有予定の一般的な案内を表示する',()=> {
   const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
   assert.doesNotMatch(html,/id="view-(?:month|fortnight)"/);
-  for(const value of ['前提','現状','一手','2026-10-06','1,117','228,100']) assert.ok(html.includes(value));
+  for(const value of ['前提','現状','一手','基本予定と追加予定を共有','日付を選ぶと予定','見出し・内容・備考を記録']) assert.ok(html.includes(value));
+  assert.doesNotMatch(html, /農業祭|1,117|228,100/);
   const source=readFileSync(new URL('../public/app.mjs',import.meta.url),'utf8');
   assert.doesNotMatch(source,/view-fortnight|view-month/);
 });

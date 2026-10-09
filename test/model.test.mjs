@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { monthRange, validateBase, effectiveEntry, DEFAULT_BASE, dateRange, fortnightRange, shiftDate, validateImport } from '../public/model.mjs';
@@ -126,4 +127,19 @@ test('月間は前週と翌週を含み、境界の週を月付き14日窓で選
   assert.deepEqual(monthWeekWindows('2026-09').find(window => window.label === '9月4週/10月1週'), windows[0]);
   assert.ok(dates.includes('2026-10-01'));
   assert.throws(() => dateRange('2026-09-20', '2026-11-07'));
+});
+
+
+test('公開雛形は初期サンプルと一致し基本予定JSONとして有効', () => {
+  const sample = JSON.parse(readFileSync(new URL('../public/base.example.json', import.meta.url), 'utf8'));
+  assert.deepEqual(sample, DEFAULT_BASE);
+  assert.deepEqual(validateBase(sample), sample);
+});
+
+
+test('追加予定の公開雛形は10月の複数日を持ち基本予定とは別の編集項目だけを指定', () => {
+  const sample = JSON.parse(readFileSync(new URL('../public/entries.example.json', import.meta.url), 'utf8'));
+  assert.ok(sample.entries.length > 1);
+  assert.deepEqual(validateImport(sample), sample.entries);
+  assert.ok(sample.entries.every(row => row.entry_date.startsWith('2026-10-')));
 });
