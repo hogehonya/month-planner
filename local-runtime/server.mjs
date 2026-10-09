@@ -5,10 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { createHandler as planner } from '../netlify/functions/planner.mjs';
 import { createHandler as packaging } from '../netlify/functions/packaging.mjs';
 import { createDiskStore } from './store.mjs';
+import { createOnlineSync } from './online-sync.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const inside = (parent, child) => child === parent || child.startsWith(parent + sep);
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
-export async function createApplication({ dataDir, publicDir = resolve(root, 'public'), origin, revision = 'unknown', getPin = () => process.env.EDIT_PIN } = {}) {
+export async function createApplication({ dataDir, publicDir = resolve(root, 'public'), origin, revision = 'unknown', getPin = () => process.env.EDIT_PIN, onlineSource = process.env.ONLINE_SOURCE_ORIGIN, fetchRemote = fetch, now = Date.now } = {}) {
   if (!dataDir) throw new Error('DATA_DIR is required');
   const canonicalOrigin = new URL(origin).origin;
   if (canonicalOrigin !== origin || !/^https?:/.test(origin)) throw new Error('APP_ORIGIN must be an HTTP(S) origin');
@@ -20,9 +21,18 @@ export async function createApplication({ dataDir, publicDir = resolve(root, 'pu
   const headerBlock = config.split('[headers.values]')[1]?.split('\n[')[0];
   if (!headerBlock) throw new Error('Netlify security headers are missing');
   const security = Object.fromEntries([...headerBlock.matchAll(/^\s*([A-Za-z-]+)\s*=\s*"([^"]*)"\s*$/gm)].map(match => [match[1], match[2]]));
+  const sync = await createOnlineSync({dataDir:storageRoot,source:onlineSource,fetchRemote,now});
   const routes = new Map([
     ['/.netlify/functions/planner', planner({ getStore: () => createDiskStore(storageRoot, 'shared-planner'), getPin })],
-    ['/.netlify/functions/packaging', packaging({ getStore: () => createDiskStore(storageRoot, 'packaging-master') })]
+    ['/api/online-sync', request=>sync.handle(request)],
+    ['/.netlify/functions/packaging', request=>sync.withStore(async store=> {
+      const response = await packaging({getStore:()=>store})(request);
+      if (request.method === 'GET' && !new URL(request.url).search && response.ok) {
+        const data = await response.json();
+        return Response.json({...data,online_sync:{enabled:true,source:sync.source}},{status:response.status,headers:response.headers});
+      }
+      return response;
+    })]
   ]);
   return async request => {
     let response;
