@@ -160,7 +160,7 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'sh
       let editor;
       try { editor = textLimit(body.editor_name, 40, '編集者名', true).trim(); }
       catch (e) { throw error(400, e.message); }
-      if (body.action === 'base') throw error(403, '取り込んだ時間割は変更できません。');
+      if (body.action === 'base') throw error(403, '取り込んだ基本予定は変更できません。');
       const store = openStore();
       if (body.action === 'add_comment') {
         let content;
@@ -197,7 +197,7 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'sh
           parseDate(body.entry_date);
           if (body.action === 'save_slot') patch = validateSlot(body.slot, body.title, body.content);
           else {
-            if (body.field !== 'note') throw new Error('時間割は変更できません。備考またはコマの見出し・内容を編集してください。');
+            if (body.field !== 'note') throw new Error('基本予定は変更できません。備考またはコマの見出し・内容を編集してください。');
             patch = { note: textLimit(body.value, LIMITS.note, '備考') };
           }
         } catch (e) { throw error(400, e.message); }

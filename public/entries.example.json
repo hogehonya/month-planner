@@ -1,12 +1,28 @@
 {
   "entries": [
     {
-      "entry_date": "2026-10-06",
-      "slot1_title": "持ち物の確認",
-      "slot1_content": "作業手袋を持参",
-      "slot2_title": "片付け",
-      "slot2_content": "道具を確認",
-      "note": "雨具を持参"
+      "entry_date": "2026-10-01",
+      "slot1_title": "定例作業の準備",
+      "slot1_content": "共有資料を整理",
+      "slot2_title": "会議の議題",
+      "slot2_content": "今月の予定を確認",
+      "note": "架空サンプル：資料を用意"
+    },
+    {
+      "entry_date": "2026-10-08",
+      "slot1_title": "出張の準備",
+      "slot1_content": "移動経路を確認",
+      "slot2_title": "買い物のメモ",
+      "slot2_content": "買い物リストを確認",
+      "note": "架空サンプル：持ち物を確認"
+    },
+    {
+      "entry_date": "2026-10-15",
+      "slot1_title": "休暇",
+      "slot1_content": "ゆっくり過ごす",
+      "slot2_title": "休暇",
+      "slot2_content": "予定を入れない",
+      "note": "架空サンプル：連絡は翌日"
     }
   ]
 }

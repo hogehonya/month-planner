@@ -9,7 +9,42 @@ export function validateSlot(slot, title, content) {
   return { [slot + '_title']: textLimit(title, SLOT_LIMITS.title, '見出し'), [slot + '_content']: textLimit(content, SLOT_LIMITS.content, '内容') };
 }
 export const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-export const DEFAULT_BASE = { slots: [{ label: '1コマ目', time: '' }, { label: '2コマ目', time: '' }], weekdays: {}, dates: {} };
+// 保存済み基本予定がない場合だけ使用する架空サンプル。ストアには書き込まない。
+export const DEFAULT_BASE = {
+  "slots": [
+    {
+      "label": "午前",
+      "time": "09:00〜12:00"
+    },
+    {
+      "label": "午後",
+      "time": "13:00〜16:00"
+    }
+  ],
+  "weekdays": {},
+  "dates": {
+    "2026-10-01": {
+      "slot1": "定例作業",
+      "slot2": "会議",
+      "note": "架空サンプル：資料を確認"
+    },
+    "2026-10-08": {
+      "slot1": "出張",
+      "slot2": "買い物",
+      "note": "架空サンプル：買い物リストを用意"
+    },
+    "2026-10-15": {
+      "slot1": "休暇",
+      "slot2": "休暇",
+      "note": "架空サンプル：予定なし"
+    },
+    "2026-10-22": {
+      "slot1": "定例作業",
+      "slot2": "月の振り返り",
+      "note": "架空サンプル：次の予定を確認"
+    }
+  }
+};
 
 export function parseDate(value) {
   if (typeof value !== 'string' || !/^[1-9]\d{3}-\d{2}-\d{2}$/.test(value)) throw new Error('日付はYYYY-MM-DDで指定してください。');
@@ -65,7 +100,7 @@ function schedule(value) {
 }
 
 export function validateBase(value) {
-  object(value, ['slots', 'weekdays', 'dates'], '時間割');
+  object(value, ['slots', 'weekdays', 'dates'], '基本予定');
   if (!Array.isArray(value.slots) || value.slots.length !== 2) throw new Error('slotsは2コマ分を指定してください。');
   const slots = value.slots.map(slot => {
     object(slot, ['label', 'time'], 'コマ');
