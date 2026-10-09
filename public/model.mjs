@@ -1,6 +1,8 @@
 export const FIELDS = ['slot1', 'slot2', 'note'];
 export const LIMITS = { slot1: 1200, slot2: 1200, note: 3000 };
 export const SLOTS = ['slot1', 'slot2'];
+export const PHOTO_LIMIT = 2 * 1024 * 1024;
+export const PHOTO_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
 export const SLOT_LIMITS = { title: 120, content: 3000 };
 export function validateSlot(slot, title, content) {
   if (!SLOTS.includes(slot)) throw new Error('編集対象のコマを確認してください。');
@@ -84,7 +86,9 @@ export function effectiveEntry(date, raw, base = DEFAULT_BASE) {
   for (const field of FIELDS) if (raw && Object.hasOwn(raw, field)) fields[field] = raw[field];
   const details = {};
   for (const slot of SLOTS) for (const field of ['title', 'content']) details[slot + '_' + field] = raw?.[slot + '_' + field] ?? '';
-  return { entry_date: date, ...fields, ...details, last_editor: raw?.last_editor ?? '', updated_at: raw?.updated_at ?? '', overridden_fields: FIELDS.filter(field => raw && Object.hasOwn(raw, field)) };
+  const photos = {};
+  for (const slot of SLOTS) { const photo = raw?.[slot + '_photo']; photos[slot + '_photo'] = photo && /^[a-f0-9]{64}$/.test(photo.id) ? { id: photo.id, mime: photo.mime, size: photo.size, url: '/.netlify/functions/planner?photo=' + photo.id } : null; }
+  return { entry_date: date, ...fields, ...details, ...photos, last_editor: raw?.last_editor ?? '', updated_at: raw?.updated_at ?? '', overridden_fields: FIELDS.filter(field => raw && Object.hasOwn(raw, field)) };
 }
 
 export const IMPORT_FIELDS = ['slot1_title', 'slot1_content', 'slot2_title', 'slot2_content', 'note'];

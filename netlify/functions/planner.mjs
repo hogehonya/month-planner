@@ -1,7 +1,7 @@
 import { getStore } from '@netlify/blobs';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { dateRange, parseDate, textLimit, validateSlot, effectiveEntry, DEFAULT_BASE, LIMITS, validateImport } from '../../public/model.mjs';
+import { dateRange, parseDate, textLimit, validateSlot, effectiveEntry, DEFAULT_BASE, LIMITS, validateImport, PHOTO_LIMIT, PHOTO_MIMES, SLOTS } from '../../public/model.mjs';
 
 const BASE_KEY = 'settings/base.json';
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
@@ -24,6 +24,32 @@ async function readJSON(request) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error();
     return body;
   } catch { throw error(400, 'JSONの形式を確認してください。'); }
+}
+
+async function readPhoto(request, mime) {
+  if (!PHOTO_MIMES.includes(mime)) throw error(415, '写真はJPEG・PNG・WebPで指定してください。');
+  if (Number(request.headers.get('Content-Length')) > PHOTO_LIMIT) throw error(413, '写真は2MiB以内にしてください。');
+  const reader = request.body?.getReader();
+  if (!reader) throw error(400, '写真を選んでください。');
+  let size = 0; const chunks = [];
+  while (true) {
+    const { done, value } = await reader.read(); if (done) break;
+    size += value.length;
+    if (size > PHOTO_LIMIT) { await reader.cancel(); throw error(413, '写真は2MiB以内にしてください。'); }
+    chunks.push(value);
+  }
+  const bytes = Buffer.concat(chunks);
+  const valid = mime === 'image/jpeg' ? bytes.length >= 5 && bytes.subarray(0, 3).equals(Buffer.from([255, 216, 255])) && bytes.subarray(-2).equals(Buffer.from([255, 217]))
+    : mime === 'image/png' ? bytes.length >= 20 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) && bytes.subarray(-12).equals(Buffer.from('0000000049454e44ae426082', 'hex'))
+    : bytes.length >= 20 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP' && ['VP8 ', 'VP8L', 'VP8X'].includes(bytes.toString('ascii', 12, 16)) && bytes.readUInt32LE(4) === bytes.length - 8;
+  if (!valid) throw error(400, '写真の形式と内容を確認してください。');
+  return bytes;
+}
+
+async function verifyPin(value, getPin, sleep) {
+  const pin = getPin();
+  if (typeof pin !== 'string' || !pin) throw error(503, '編集用PINが設定されていません。');
+  if (typeof value !== 'string' || !timingSafeEqual(hash(value), hash(pin))) { await sleep(300); throw error(401, 'PINを確認してください。'); }
 }
 
 async function update(store, key, mutate) {
@@ -72,6 +98,13 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'sh
     try {
       const url = new URL(request.url);
       if (request.method === 'GET') {
+        if (url.searchParams.has('photo')) {
+          const id = url.searchParams.get('photo');
+          if (!/^[a-f0-9]{64}$/.test(id)) throw error(400, '写真を確認してください。');
+          const photo = await openStore().getWithMetadata(`photos/${id}`, { type: 'arrayBuffer' });
+          if (!photo || !PHOTO_MIMES.includes(photo.metadata?.mime)) throw error(404, '写真が見つかりません。');
+          return new Response(photo.data, { headers: { 'Content-Type': photo.metadata.mime, 'Cache-Control': 'no-store', 'Netlify-CDN-Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'inline', 'Content-Security-Policy': "default-src 'none'" } });
+        }
         let dates;
         try { dates = dateRange(url.searchParams.get('start'), url.searchParams.get('end'), 56); }
         catch (e) { throw error(400, e.message); }
@@ -102,13 +135,27 @@ export function createHandler({ getStore: openStore = () => getStore({ name: 'sh
       }
       if (request.method !== 'POST') return json({ error: 'GETまたはPOSTを使用してください。' }, 405);
       if (request.headers.get('Origin') && request.headers.get('Origin') !== url.origin) throw error(403, 'このページから操作してください。');
+      if (url.searchParams.get('action') === 'upload_photo') {
+        await verifyPin(request.headers.get('X-Edit-Pin'), getPin, sleep);
+        let date, slot, editor;
+        try {
+          date = url.searchParams.get('entry_date'); parseDate(date);
+          slot = url.searchParams.get('slot'); if (!SLOTS.includes(slot)) throw new Error('編集対象のコマを確認してください。');
+          editor = textLimit(decodeURIComponent(request.headers.get('X-Editor-Name') ?? ''), 40, '編集者名', true).trim();
+        } catch (e) { throw error(400, e instanceof URIError ? '編集者名を確認してください。' : e.message); }
+        const mime = request.headers.get('Content-Type')?.split(';')[0].trim();
+        const bytes = await readPhoto(request, mime);
+        const id = createHash('sha256').update(bytes).digest('hex');
+        const photo = { id, mime, size: bytes.length }, store = openStore();
+        const base = (await store.get(BASE_KEY, { type: 'json' }))?.base ?? DEFAULT_BASE;
+        await store.set(`photos/${id}`, bytes, { onlyIfNew: true, metadata: { mime, size: bytes.length } });
+        const key = `entries/${date}.json`, field = slot + '_photo', event = eventFor(date, field, editor);
+        const row = await update(store, key, current => current?.[field]?.id === id ? null : ({ ...current, entry_date: date, [field]: photo, last_editor: editor, updated_at: event.changed_at, _pending_history: [...(current?._pending_history ?? []), event] }));
+        return json({ ok: true, row: effectiveEntry(date, row, base), history_saved: await flushHistory(store, key) });
+      }
       if (request.headers.get('Content-Type')?.split(';')[0].trim() !== 'application/json') throw error(415, 'application/jsonを指定してください。');
       const body = await readJSON(request);
-      const pin = getPin();
-      if (typeof pin !== 'string' || !pin) throw error(503, '編集用PINが設定されていません。');
-      if (typeof body.pin !== 'string' || !timingSafeEqual(hash(body.pin), hash(pin))) {
-        await sleep(300); throw error(401, 'PINを確認してください。');
-      }
+      await verifyPin(body.pin, getPin, sleep);
       if (body.action === 'verify') return json({ ok: true });
       let editor;
       try { editor = textLimit(body.editor_name, 40, '編集者名', true).trim(); }

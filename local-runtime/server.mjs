@@ -69,7 +69,8 @@ export function createHttpServer(application, origin) {
       if (incoming.headers.host !== base.host) { outgoing.writeHead(403); outgoing.end('Invalid host'); incoming.resume(); return; }
       const url = new URL(incoming.url, base);
       if (url.origin !== base.origin) { outgoing.writeHead(403); outgoing.end(); incoming.resume(); return; }
-      const limit = url.pathname === '/.netlify/functions/packaging' ? 4400000 : 262144;
+      const limit = url.pathname === '/.netlify/functions/packaging' ? 4400000
+        : url.pathname === '/.netlify/functions/planner' && url.searchParams.get('action') === 'upload_photo' ? 2 * 1024 * 1024 : 262144;
       let size = 0; const chunks = [];
       for await (const chunk of incoming) {
         size += chunk.length;
