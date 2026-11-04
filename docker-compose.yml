@@ -1,6 +1,6 @@
 services:
   app:
-    image: gitea.honya.dev/honya-dev-web-app-month-planner/app:${APP_REVISION:?APP_REVISION is required}
+    image: gitea.honya.dev/honya-dev-web-app/month-planner-app:${APP_REVISION:?APP_REVISION is required}
     container_name: month-planner
     restart: unless-stopped
     init: true

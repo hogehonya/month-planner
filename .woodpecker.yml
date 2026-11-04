@@ -18,8 +18,8 @@ steps:
     commands:
       - export DOCKER_CONFIG=/tmp/month-planner-docker
       - printf '%s' "$${GITEA_TOKEN}" | docker login gitea.honya.dev --username "$${GITEA_USERNAME}" --password-stdin
-      - docker build --build-arg APP_REVISION=${CI_COMMIT_SHA} -t gitea.honya.dev/honya-dev-web-app-month-planner/app:${CI_COMMIT_SHA} .
-      - docker push gitea.honya.dev/honya-dev-web-app-month-planner/app:${CI_COMMIT_SHA}
+      - docker build --build-arg APP_REVISION=${CI_COMMIT_SHA} -t gitea.honya.dev/honya-dev-web-app/month-planner-app:${CI_COMMIT_SHA} .
+      - docker push gitea.honya.dev/honya-dev-web-app/month-planner-app:${CI_COMMIT_SHA}
     when:
       - branch: main
         event: [push, manual]

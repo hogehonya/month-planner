@@ -1,6 +1,6 @@
 # LAN版のデプロイ
 
-本番運用の構成です。GitHub `hogehonya/month-planner` をソースの正本とし、Gitea `honya-dev-web-app-month-planner/app` は10分間隔のpull mirrorとして利用します。変更はGitHubのPRへ集約し、ミラーへ直接コミットしません。実行・保存の仕様は[LAN実行環境](../local-runtime/README.md)を参照してください。
+本番運用の構成です。GitHub `hogehonya/month-planner` をソースの正本とし、Gitea `honya-dev-web-app/month-planner-app` は10分間隔のpull mirrorとして利用します。変更はGitHubのPRへ集約し、ミラーへ直接コミットしません。実行・保存の仕様は[LAN実行環境](../local-runtime/README.md)を参照してください。
 
 ## 配置と更新
 
