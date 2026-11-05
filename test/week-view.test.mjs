@@ -25,9 +25,9 @@ test('月初からの週番号を表示し、翌週の日付選択では表示�
   const app = load(range);
   app.context.buildWeeks();
   assert.equal(app.picker.hidden, false);
-  assert.deepEqual(app.picker.children.map(button => button.textContent), ['7月4週', '1週', '2週', '3週', '4週', '5週', '6週']);
-  assert.equal(app.picker.children[0].attributes['aria-label'], '7月4週/8月1週 2026-07-19 〜 2026-08-01');
-  assert.equal(app.picker.children[1].attributes['aria-label'], '8月1週/8月2週 2026-07-26 〜 2026-08-08');
+  assert.deepEqual(app.picker.children.map(button => button.textContent), ['7/19〜8/1', '7/26〜8/8', '8/2〜8/15', '8/9〜8/22', '8/16〜8/29', '8/23〜9/5', '8/30〜9/12']);
+  assert.equal(app.picker.children[0].attributes['aria-label'], '7/19〜8/1 7月4週/8月1週 7月19日（日）〜8月1日（土）');
+  assert.equal(app.picker.children[1].attributes['aria-label'], '7/26〜8/8 8月1週/8月2週 7月26日（日）〜8月8日（土）');
   app.picker.children[0].onclick();
   app.context.showWeek('2026-07-30');
   assert.deepEqual(app.visible(), range.slice(0, 14));

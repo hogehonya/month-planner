@@ -349,17 +349,26 @@ function buildWeeks() {
   $('week-picker').hidden = false;
   monthWeekWindows(month).forEach(({ dates: week, label }, index) => {
     const button = document.createElement('button'); button.type = 'button';
-    button.textContent = index === 0 ? label.split('/')[0] : `${index}週`; button.dataset.start = week[0];
-    button.setAttribute('aria-label', `${label} ${week[0]} 〜 ${week.at(-1)}`);
+    // 2週間の窓を日付範囲で示す（週番号だけでは14日分と分からないため）
+    button.textContent = shortRange(week); button.dataset.start = week[0];
+    button.setAttribute('aria-label', `${shortRange(week)} ${label} ${formatRange(week)}`);
     button.onclick = () => selectDay(week[0], false, week[0]); $('week-picker').append(button);
   });
+}
+function shortRange(week) {
+  const format = date => `${Number(date.slice(5, 7))}/${Number(date.slice(-2))}`;
+  return `${format(week[0])}〜${format(week.at(-1))}`;
+}
+function formatRange(week) {
+  const format = date => `${Number(date.slice(5, 7))}月${Number(date.slice(-2))}日（${'日月火水木金土'[new Date(`${date}T12:00:00Z`).getUTCDay()]}）`;
+  return `${format(week[0])}〜${format(week.at(-1))}`;
 }
 function showWeek(date) {
   const windows = monthWeekWindows(month).map(window => window.dates);
   const week = windows.find(week => week[0] === activeWeekStart && week.includes(date))
     ?? windows.findLast(week => week.includes(date));
   activeWeekStart = week[0];
-  $('week-heading').textContent = `${week[0]} 〜 ${week.at(-1)}`;
+  $('week-heading').textContent = formatRange(week);
   for (const button of $('week-picker').children) button.setAttribute('aria-pressed', String(button.dataset.start === week[0]));
   for (const [date, day] of dayButtons) day.button.classList.toggle('outside-week', !week.includes(date));
 }

@@ -8,7 +8,7 @@ import { createDiskStore } from './store.mjs';
 import { createOnlineSync } from './online-sync.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const inside = (parent, child) => child === parent || child.startsWith(parent + sep);
-const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.woff2': 'font/woff2', '.mjs': 'text/javascript; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
 export async function createApplication({ dataDir, publicDir = resolve(root, 'public'), origin, revision = 'unknown', getPin = () => process.env.EDIT_PIN, onlineSource = process.env.ONLINE_SOURCE_ORIGIN, fetchRemote = fetch, now = Date.now } = {}) {
   if (!dataDir) throw new Error('DATA_DIR is required');
   const canonicalOrigin = new URL(origin).origin;
